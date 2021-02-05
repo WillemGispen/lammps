@@ -62,6 +62,7 @@ void PairHardYukawa::compute(int eflag, int vflag)
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,r2inv,r,rinv,screening,forceyukawa,factor;
+  double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
   evdwl = 0.0;
@@ -105,11 +106,21 @@ void PairHardYukawa::compute(int eflag, int vflag)
         r2inv = 1.0/rsq;
         r = sqrt(rsq);
         rinv = 1.0/r;
-        screening = exp(-kappa*r);
-        forceyukawa = a[itype][jtype] * screening * (kappa + rinv);
+        screening = exp(-kappa*(r-1.0));
+        forceyukawa = screening * (kappa + rinv) * r2inv;
 
-        fpair = factor*forceyukawa * r2inv;
+        if (r < 50.0/49.0) {
+          // add continuous hard sphere approx WCA(50,49)
+          r6inv = r2inv*r2inv*r2inv;
+          r12inv = r6inv * r6inv;
+          r24inv = r12inv * r12inv;
+          r48inv = r24inv * r24inv;
+          b5049 = 134.55266;
+          forceyukawa += b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
+        }
 
+        fpair = factor * a[itype][jtype] * forceyukawa;
+        
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -121,6 +132,11 @@ void PairHardYukawa::compute(int eflag, int vflag)
 
         if (eflag) {
           evdwl = a[itype][jtype] * screening * rinv - offset[itype][jtype];
+          if (r < 50.0/49.0) {
+            // add continuous hard sphere approx WCA(50,49)
+            evdwl += a[itype][jtype] * b5049 * r48inv * (r2inv - rinv);
+            evdwl += a[itype][jtype];
+          }
           evdwl *= factor;
         }
 
@@ -219,7 +235,7 @@ double PairHardYukawa::init_one(int i, int j)
   }
 
   if (offset_flag && (cut[i][j] > 0.0)) {
-    double screening = exp(-kappa * cut[i][j]);
+    double screening = exp(-kappa * (cut[i][j] - 1.0));
     offset[i][j] = a[i][j] * screening / cut[i][j];
   } else offset[i][j] = 0.0;
 
@@ -333,14 +349,34 @@ double PairHardYukawa::single(int /*i*/, int /*j*/, int itype, int jtype, double
                           double &fforce)
 {
   double r2inv,r,rinv,screening,forceyukawa,phi;
+  double r6inv, r12inv, r24inv, r48inv, b5049;
 
   r2inv = 1.0/rsq;
   r = sqrt(rsq);
   rinv = 1.0/r;
-  screening = exp(-kappa*r);
-  forceyukawa = a[itype][jtype] * screening * (kappa + rinv);
-  fforce = factor_lj*forceyukawa * r2inv;
+  screening = exp(-kappa*(r-1.0));
+  forceyukawa = r2inv * screening * (kappa + rinv);
+
+  if (r < 50.0/49.0) {
+    // add continuous hard sphere approx WCA(50,49)
+    r6inv = r2inv*r2inv*r2inv;
+    r12inv = r6inv * r6inv;
+    r24inv = r12inv * r12inv;
+    r48inv = r24inv * r24inv;
+    b5049 = 134.55266;
+    forceyukawa += b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
+  }
+
+  fforce = factor_lj* a[itype][jtype] * forceyukawa;
 
   phi = a[itype][jtype] * screening * rinv - offset[itype][jtype];
+
+  if (r < 50.0/49.0) {
+    // add continuous hard sphere approx WCA(50,49)
+    phi += a[itype][jtype] * b5049 * r48inv * (r2inv - rinv);
+    phi += a[itype][jtype];
+  }
+
   return factor_lj*phi;
+
 }
