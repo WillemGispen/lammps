@@ -14,12 +14,15 @@
 /* ----------------------------------------------------------------------
    Contributing author:  Aidan Thompson (SNL)
                          Axel Kohlmeyer (Temple U)
+                         Willem Gispen (UU)
 ------------------------------------------------------------------------- */
+
 
 #include "compute_coarseorientorder_atom.h"
 
 #include "atom.h"
 #include "comm.h"
+#include "compute_orientorder_atom.h"
 #include "error.h"
 #include "force.h"
 #include "math_const.h"
@@ -45,38 +48,61 @@ using namespace MathConst;
 
 #define QEPSILON 1.0e-6
 
+#define INVOKED_PERATOM 8
+
 /* ---------------------------------------------------------------------- */
 
 ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  qlist(nullptr), distsq(nullptr), nearest(nullptr), rlist(nullptr),
-  qnarray(nullptr), qnm_r(nullptr), qnm_i(nullptr), cglist(nullptr)
+  qlist(nullptr), distsq(nullptr), nearest(nullptr), rlist(nullptr), qnlist(nullptr),
+  qnarray(nullptr), qnm_r(nullptr), qnm_i(nullptr), cglist(nullptr),
+  id_orientorder(nullptr), normv(nullptr)
 {
   if (narg < 3 ) error->all(FLERR,"Illegal compute coarseorientorder/atom command");
 
-  // set default values for optional args
+  // read compute id, which should refer to a compute orientorder/atom
+  int iarg = 3;
+  while (iarg < narg) {
+    if (strcmp(arg[iarg],"orientorder") == 0) {
+        if (iarg+2 > narg)
+          error->all(FLERR,"Illegal compute coarseorientorder/atom command");
 
-  nnn = 12;
-  cutsq = 0.0;
-  wlflag = 0;
-  wlhatflag = 0;
+        int n = strlen(arg[iarg+1]) + 1;
+        id_orientorder = new char[n];
+        strcpy(id_orientorder,arg[iarg+1]);
+
+        int iorientorder = modify->find_compute(id_orientorder);
+        if (iorientorder < 0)
+          error->all(FLERR,"Could not find compute coarseorientorder/atom compute ID");
+        if (!utils::strmatch(modify->compute[iorientorder]->style,"^orientorder/atom"))
+          error->all(FLERR,"Compute coarseorientorder/atom compute ID is not orientorder/atom");
+
+        break;
+    }
+  }
+
+  // get default values partly from orientorder compute
+  int iorientorder = modify->find_compute(id_orientorder);
+  c_orientorder = (ComputeOrientOrderAtom*)(modify->compute[iorientorder]);
+
+  nnn = c_orientorder->nnn;
+  cutsq = c_orientorder->cutsq;
+  wlflag = c_orientorder->wlflag;
+  wlhatflag = c_orientorder->wlhatflag;
   qlcompflag = 0;
+  commflag = 1;
   chunksize = 16384;
 
   // specify which orders to request
 
-  nqlist = 5;
+  nqlist = 1;
   memory->create(qlist,nqlist,"coarseorientorder/atom:qlist");
-  qlist[0] = 4;
-  qlist[1] = 6;
-  qlist[2] = 8;
-  qlist[3] = 10;
-  qlist[4] = 12;
-  qmax = 12;
+  qlist[0] = c_orientorder->qlcomp;
+  qmax = qlist[0];
 
   // process optional args
 
-  int iarg = 3;
+  iarg = 3;
   while (iarg < narg) {
     if (strcmp(arg[iarg],"nnn") == 0) {
       if (iarg+2 > narg)
@@ -90,24 +116,7 @@ ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg
       }
       iarg += 2;
     } else if (strcmp(arg[iarg],"degrees") == 0) {
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute coarseorientorder/atom command");
-      nqlist = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      if (nqlist <= 0)
-        error->all(FLERR,"Illegal compute coarseorientorder/atom command");
-      memory->destroy(qlist);
-      memory->create(qlist,nqlist,"coarseorientorder/atom:qlist");
-      iarg += 2;
-      if (iarg+nqlist > narg)
-        error->all(FLERR,"Illegal compute coarseorientorder/atom command");
-      qmax = 0;
-      for (int il = 0; il < nqlist; il++) {
-        qlist[il] = utils::numeric(FLERR,arg[iarg+il],false,lmp);
-        if (qlist[il] < 0)
-          error->all(FLERR,"Illegal compute coarseorientorder/atom command");
-        if (qlist[il] > qmax) qmax = qlist[il];
-      }
-      iarg += nqlist;
+      error->all(FLERR,"Illegal compute coarseorientorder/atom command");
     } else if (strcmp(arg[iarg],"wl") == 0) {
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute coarseorientorder/atom command");
@@ -151,13 +160,30 @@ ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg
       if (chunksize <= 0)
         error->all(FLERR,"Illegal compute coarseorientorder/atom command");
       iarg += 2;
-    } else error->all(FLERR,"Illegal compute coarseorientorder/atom command");
+    } else if (strcmp(arg[iarg],"comm") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute coarseorientorder/atom command");
+      if (strcmp(arg[iarg+1],"yes") == 0) commflag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0) commflag = 0;
+      else error->all(FLERR,"Illegal compute coarseorientorder/atom command");
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"orientorder") == 0) {
+      iarg += 2; 
+    } else {
+      error->all(FLERR,"Illegal compute coarseorientorder/atom command");
+    }
   }
 
   ncol = nqlist;
   if (wlflag) ncol += nqlist;
   if (wlhatflag) ncol += nqlist;
   if (qlcompflag) ncol += 2*(2*qlcomp+1);
+
+  iqlcomp_ = c_orientorder->iqlcomp; // index of orientorder ql
+  int nqlist_ = c_orientorder->nqlist;
+  jjqlcomp_ = nqlist_; // index of orientorder components
+  if (c_orientorder->wlflag) jjqlcomp_ += nqlist_;
+  if (c_orientorder->wlhatflag) jjqlcomp_ += nqlist_;
 
   peratom_flag = 1;
   size_peratom_cols = ncol;
@@ -175,6 +201,7 @@ ComputeCoarseOrientOrderAtom::~ComputeCoarseOrientOrderAtom()
   memory->destroy(qnarray);
   memory->destroy(distsq);
   memory->destroy(rlist);
+  memory->destroy(qnlist);
   memory->destroy(nearest);
   memory->destroy(qlist);
   memory->destroy(qnm_r);
@@ -193,6 +220,15 @@ void ComputeCoarseOrientOrderAtom::init()
   else if (sqrt(cutsq) > force->pair->cutforce)
     error->all(FLERR,"Compute coarseorientorder/atom cutoff is "
                "longer than pairwise cutoff");
+
+  int iorientorder = modify->find_compute(id_orientorder);
+  c_orientorder = (ComputeOrientOrderAtom*)(modify->compute[iorientorder]);
+  int l = qlist[0];
+  //  communicate real and imaginary 2*l+1 components of the normalized vector
+  comm_forward = 2*(2*l+1);
+  if (!(c_orientorder->qlcompflag))
+    error->all(FLERR,"Compute coarseorientorder/atom requires components "
+                "option in compute orientorder/atom");
 
   memory->create(qnm_r,nqlist,2*qmax+1,"coarseorientorder/atom:qnm_r");
   memory->create(qnm_i,nqlist,2*qmax+1,"coarseorientorder/atom:qnm_i");
@@ -266,25 +302,57 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
       ztmp = x[i][2];
       jlist = firstneigh[i];
       jnum = numneigh[i];
+      len_qnlist = 1 + 2*(2*qlist[0]+1);      
 
       // insure distsq and nearest arrays are long enough
 
       if (jnum > maxneigh) {
         memory->destroy(distsq);
         memory->destroy(rlist);
+        memory->destroy(qnlist);
         memory->destroy(nearest);
         maxneigh = jnum;
-        memory->create(distsq,maxneigh,"coarseorientorder/atom:distsq");
-        memory->create(rlist,maxneigh,3,"coarseorientorder/atom:rlist");
-        memory->create(nearest,maxneigh,"coarseorientorder/atom:nearest");
+        memory->create(distsq,maxneigh+1,"coarseorientorder/atom:distsq");
+        memory->create(rlist,maxneigh+1,3,"coarseorientorder/atom:rlist");
+        memory->create(qnlist,maxneigh+1,len_qnlist,"coarseorientorder/atom:qnlist");
+        memory->create(nearest,maxneigh+1,"coarseorientorder/atom:nearest");
       }
 
       // loop over list of all neighbors within force cutoff
       // distsq[] = distance sq to each
       // rlist[] = distance vector to each
+      // qnlist[] = output vector of compute_orientorder/atom of each neighbor and the particle itself
       // nearest[] = atom indices of neighbors
 
-      int ncount = 0;
+      // invoke compute_orientorder if not previously invoked
+      if (!(c_orientorder->invoked_flag & INVOKED_PERATOM)) {
+        c_orientorder->compute_peratom();
+        c_orientorder->invoked_flag |= INVOKED_PERATOM;
+      }
+      nqlist = c_orientorder->nqlist;
+      normv = c_orientorder->array_atom;
+
+      if (commflag) {
+        comm->forward_comm_compute(this);
+      }
+
+      // compute rlist and read qnlist
+      // // fill rlist and qnlist with qn of particle itself (i)
+      nearest[0] = i;
+      distsq[0] = 0.0;
+      rlist[0][0] = 0.0;
+      rlist[0][1] = 0.0;
+      rlist[0][2] = 0.0;
+
+      // q_l of particle i
+      qnlist[0][0] = normv[i][iqlcomp_];            
+      for (int k = 1; k < len_qnlist; k++){
+        // q_lm of particle i
+        qnlist[0][k] = normv[i][jjqlcomp_ + k - 1];
+      }
+
+      // // fill rlist and qnlist of neighbors
+      int ncount = 1;
       for (jj = 0; jj < jnum; jj++) {
         j = jlist[jj];
         j &= NEIGHMASK;
@@ -294,33 +362,79 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
         delz = ztmp - x[j][2];
         rsq = delx*delx + dely*dely + delz*delz;
         if (rsq < cutsq) {
-          distsq[ncount] = rsq;
-          rlist[ncount][0] = delx;
-          rlist[ncount][1] = dely;
-          rlist[ncount][2] = delz;
-          nearest[ncount++] = j;
+          if (commflag || (normv[j][0] > MY_EPSILON)) {
+            // if no communication, ignore ghost atoms
+            distsq[ncount] = rsq;
+            rlist[ncount][0] = delx;
+            rlist[ncount][1] = dely;
+            rlist[ncount][2] = delz;
+
+            // fill qnlist
+            qnlist[ncount][0] = normv[j][iqlcomp_];
+            for (int k = 1; k < len_qnlist; k++){
+              qnlist[ncount][k] = normv[j][jjqlcomp_ + k - 1];
+            }
+            
+            nearest[ncount] = j;
+            ncount++;
+          }
         }
       }
+      ncount--;
 
       // if not nnn neighbors, order parameter = 0;
 
-      if ((ncount == 0) || (ncount < nnn)) {
+      if ((ncount == 0) || ((ncount < nnn) && commflag)) {
         for (int jj = 0; jj < ncol; jj++)
           qn[jj] = 0.0;
         continue;
       }
 
       // if nnn > 0, use only nearest nnn neighbors
-
+      // also keep particle itself
       if (nnn > 0) {
-        select3(nnn,ncount,distsq,nearest,rlist);
-        ncount = nnn;
+        int k = MIN(nnn+1, ncount+1);
+        select3(k,ncount+1,distsq,nearest,rlist,qnlist);
+        ncount = k;
       }
 
-      calc_boop(rlist, ncount, qn, qlist, nqlist);
+      calc_boop(rlist, qnlist, ncount, qn, qlist, nqlist);
     }
   }
 }
+
+
+/* ---------------------------------------------------------------------- */
+
+int ComputeCoarseOrientOrderAtom::pack_forward_comm(int n, int *list, double *buf,
+                                        int /*pbc_flag*/, int * /*pbc*/)
+{ 
+  int i,m=0,j;
+  for (i = 0; i < n; ++i) {
+    buf[m++] = normv[i][iqlcomp_];            
+    for (int k = 1; k < len_qnlist; k++){
+      buf[m++] = normv[i][jjqlcomp_ + k - 1];
+    }
+  }
+
+  return m;
+}
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeCoarseOrientOrderAtom::unpack_forward_comm(int n, int first, double *buf)
+{
+  int i,last,m=0,j;
+  last = first + n;
+  for (i = first; i < last; ++i) {
+    
+    normv[i][iqlcomp_] = buf[m++];            
+    for (int k = 1; k < len_qnlist; k++){
+      normv[i][jjqlcomp_ + k - 1] = buf[m++];
+    }
+  }
+}
+
 
 /* ----------------------------------------------------------------------
    memory usage of local atom-based array
@@ -356,16 +470,25 @@ double ComputeCoarseOrientOrderAtom::memory_usage()
     tmp = a[2]; a[2] = b[2]; b[2] = tmp; \
   } while(0)
 
+#define SWAPN(a,b,N) do {                      \
+    for (int iN = 0; iN < N; iN++) {           \
+      tmp = a[iN]; a[iN] = b[iN]; b[iN] = tmp; \
+    }                                          \
+  } while(0)
+
 /* ---------------------------------------------------------------------- */
 
-void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr, double **arr3)
+void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr, double **arr3, double **arrN)
 {
   int i,ir,j,l,mid,ia,itmp;
   double a,tmp,a3[3];
+  int N = len_qnlist;
+  double aN[N];
 
   arr--;
   iarr--;
   arr3--;
+  arrN--;
   l = 1;
   ir = n;
   for (;;) {
@@ -374,6 +497,7 @@ void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr,
         SWAP(arr[l],arr[ir]);
         ISWAP(iarr[l],iarr[ir]);
         SWAP3(arr3[l],arr3[ir]);
+        SWAPN(arrN[l],arrN[ir],N);
       }
       return;
     } else {
@@ -381,20 +505,24 @@ void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr,
       SWAP(arr[mid],arr[l+1]);
       ISWAP(iarr[mid],iarr[l+1]);
       SWAP3(arr3[mid],arr3[l+1]);
+      SWAPN(arrN[mid],arrN[l+1],N);
       if (arr[l] > arr[ir]) {
         SWAP(arr[l],arr[ir]);
         ISWAP(iarr[l],iarr[ir]);
         SWAP3(arr3[l],arr3[ir]);
+        SWAPN(arrN[l],arrN[ir],N);
       }
       if (arr[l+1] > arr[ir]) {
         SWAP(arr[l+1],arr[ir]);
         ISWAP(iarr[l+1],iarr[ir]);
         SWAP3(arr3[l+1],arr3[ir]);
+        SWAPN(arrN[l+1],arrN[ir],N);
       }
       if (arr[l] > arr[l+1]) {
         SWAP(arr[l],arr[l+1]);
         ISWAP(iarr[l],iarr[l+1]);
         SWAP3(arr3[l],arr3[l+1]);
+        SWAPN(arrN[l],arrN[l+1],N);
       }
       i = l+1;
       j = ir;
@@ -403,6 +531,10 @@ void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr,
       a3[0] = arr3[l+1][0];
       a3[1] = arr3[l+1][1];
       a3[2] = arr3[l+1][2];
+      for (int iN = 0; iN < N; iN++) {
+        aN[iN] = arrN[l+1][iN];
+      }
+      
       for (;;) {
         do i++; while (arr[i] < a);
         do j--; while (arr[j] > a);
@@ -410,6 +542,7 @@ void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr,
         SWAP(arr[i],arr[j]);
         ISWAP(iarr[i],iarr[j]);
         SWAP3(arr3[i],arr3[j]);
+        SWAPN(arrN[i],arrN[j],N);
       }
       arr[l+1] = arr[j];
       arr[j] = a;
@@ -421,6 +554,11 @@ void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr,
       arr3[j][0] = a3[0];
       arr3[j][1] = a3[1];
       arr3[j][2] = a3[2];
+      for (int iN = 0; iN < N; iN++) {
+        arrN[l+1][iN] = arrN[j][iN];
+        arrN[j][iN] = aN[iN];
+      }
+      
       if (j >= k) ir = j-1;
       if (j <= k) l = i;
     }
@@ -432,6 +570,7 @@ void ComputeCoarseOrientOrderAtom::select3(int k, int n, double *arr, int *iarr,
 ------------------------------------------------------------------------- */
 
 void ComputeCoarseOrientOrderAtom::calc_boop(double **rlist,
+                                       double **qnlist, // qnlist of neighbors
                                        int ncount, double qn[],
                                        int qlist[], int nqlist) {
 
@@ -443,62 +582,41 @@ void ComputeCoarseOrientOrderAtom::calc_boop(double **rlist,
     }
   }
 
-  for(int ineigh = 0; ineigh < ncount; ineigh++) {
-    const double * const r = rlist[ineigh];
-    double rmag = dist(r);
-    if(rmag <= MY_EPSILON) {
-      return;
+  for(int ineigh = 0; ineigh < ncount + 1; ineigh++) {
+
+    // Check if distance is non-zero
+    if (ineigh != 0) {
+      const double * const r = rlist[ineigh];
+      double rmag = dist(r);
+      if(rmag <= MY_EPSILON) {
+        return;
+      }
     }
 
-    double costheta = r[2] / rmag;
-    double expphi_r = r[0];
-    double expphi_i = r[1];
-    double rxymag = sqrt(expphi_r*expphi_r+expphi_i*expphi_i);
-    if(rxymag <= MY_EPSILON) {
-      expphi_r = 1.0;
-      expphi_i = 0.0;
-    } else {
-      double rxymaginv = 1.0/rxymag;
-      expphi_r *= rxymaginv;
-      expphi_i *= rxymaginv;
-    }
+    // get orientorder components of neighbor
+    const double * const qn_ = qnlist[ineigh];
 
     for (int il = 0; il < nqlist; il++) {
       int l = qlist[il];
+      int jj = 0;
 
-      // calculate spherical harmonics
-      // Ylm, -l <= m <= l
-      // sign convention: sign(Yll(0,0)) = (-1)^l
+      double qnormfac = sqrt(MY_4PI/(2*l+1));
+      double qnfac = qn_[jj++]/qnormfac;
 
-      qnm_r[il][l] += polar_prefactor(l, 0, costheta);
-      double expphim_r = expphi_r;
-      double expphim_i = expphi_i;
-      for(int m = 1; m <= +l; m++) {
-
-        double prefactor = polar_prefactor(l, m, costheta);
-        double ylm_r = prefactor * expphim_r;
-        double ylm_i = prefactor * expphim_i;
-        qnm_r[il][m+l] += ylm_r;
-        qnm_i[il][m+l] += ylm_i;
-        if(m & 1) {
-          qnm_r[il][-m+l] -= ylm_r;
-          qnm_i[il][-m+l] += ylm_i;
-        } else {
-          qnm_r[il][-m+l] += ylm_r;
-          qnm_i[il][-m+l] -= ylm_i;
-        }
-        double tmp_r = expphim_r*expphi_r - expphim_i*expphi_i;
-        double tmp_i = expphim_r*expphi_i + expphim_i*expphi_r;
-        expphim_r = tmp_r;
-        expphim_i = tmp_i;
+      // calculate sum of orientorder components over neighbors
+      for(int m = 0; m < 2*l+1; m++) {
+        double qnm_r_lm_ = qn_[jj++] * qnfac;
+        double qnm_i_lm_ = qn_[jj++] * qnfac;
+        qnm_r[il][m] += qnm_r_lm_;
+        qnm_i[il][m] += qnm_i_lm_;
       }
-
     }
   }
 
   // convert sums to averages
 
-  double facn = 1.0 / ncount;
+  double facn = 1.0 / (ncount + 1);
+
   for (int il = 0; il < nqlist; il++) {
     int l = qlist[il];
     for(int m = 0; m < 2*l+1; m++) {

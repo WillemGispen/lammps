@@ -31,26 +31,31 @@ class ComputeCoarseOrientOrderAtom : public Compute {
   virtual void init();
   void init_list(int, class NeighList *);
   virtual void compute_peratom();
+  int pack_forward_comm(int, int *, double *, int, int *);
+  void unpack_forward_comm(int, int, double *);
   double memory_usage();
   double cutsq;
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
+  int icompute, commflag;
   int *qlist;
   int nqlist;
 
  protected:
   int nmax,maxneigh,ncol,nnn;
+  int iqlcomp_, jjqlcomp_, len_qnlist;
   class NeighList *list;
   double *distsq;
   int *nearest;
   double **rlist;
+  double **qnlist;
   int qmax;
   double **qnarray;
   double **qnm_r;
   double **qnm_i;
 
-  void select3(int, int, double *, int *, double **);
-  void calc_boop(double **rlist, int numNeighbors,
-                 double qn[], int nlist[], int nnlist);
+  void select3(int, int, double *, int *, double **, double **);
+  void calc_boop(double **rlist, double **qnlist,
+                 int numNeighbors, double qn[], int nlist[], int nnlist);
   double dist(const double r[]);
 
   double polar_prefactor(int, int, double);
@@ -63,6 +68,10 @@ class ComputeCoarseOrientOrderAtom : public Compute {
   double *cglist;                      // Clebsch-Gordan coeffs
   int idxcg_max;
   int chunksize;
+
+  class ComputeOrientOrderAtom *c_orientorder;
+  char *id_orientorder;
+  double **normv;
 };
 
 }
