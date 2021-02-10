@@ -13,45 +13,49 @@
 
 #ifdef COMPUTE_CLASS
 
-ComputeStyle(orientorder/atom,ComputeOrientOrderAtom)
+ComputeStyle(coarseorientorder/atom,ComputeCoarseOrientOrderAtom)
 
 #else
 
-#ifndef LMP_COMPUTE_ORIENTORDER_ATOM_H
-#define LMP_COMPUTE_ORIENTORDER_ATOM_H
+#ifndef LMP_COMPUTE_COARSEORIENTORDER_ATOM_H
+#define LMP_COMPUTE_COARSEORIENTORDER_ATOM_H
 
 #include "compute.h"
 
 namespace LAMMPS_NS {
 
-class ComputeOrientOrderAtom : public Compute {
+class ComputeCoarseOrientOrderAtom : public Compute {
  public:
-  ComputeOrientOrderAtom(class LAMMPS *, int, char **);
-  ~ComputeOrientOrderAtom();
+  ComputeCoarseOrientOrderAtom(class LAMMPS *, int, char **);
+  ~ComputeCoarseOrientOrderAtom();
   virtual void init();
   void init_list(int, class NeighList *);
   virtual void compute_peratom();
+  int pack_forward_comm(int, int *, double *, int, int *);
+  void unpack_forward_comm(int, int, double *);
   double memory_usage();
   double cutsq;
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
-  int nnn;
+  int icompute, commflag;
   int *qlist;
   int nqlist;
 
  protected:
-  int nmax,maxneigh,ncol;
+  int nmax,maxneigh,ncol,nnn;
+  int iqlcomp_, jjqlcomp_, len_qnlist;
   class NeighList *list;
   double *distsq;
   int *nearest;
   double **rlist;
+  double **qnlist;
   int qmax;
   double **qnarray;
   double **qnm_r;
   double **qnm_i;
 
-  void select3(int, int, double *, int *, double **);
-  void calc_boop(double **rlist, int numNeighbors,
-                 double qn[], int nlist[], int nnlist);
+  void select3(int, int, double *, int *, double **, double **);
+  void calc_boop(double **rlist, double **qnlist,
+                 int numNeighbors, double qn[], int nlist[], int nnlist);
   double dist(const double r[]);
 
   double polar_prefactor(int, int, double);
@@ -64,6 +68,10 @@ class ComputeOrientOrderAtom : public Compute {
   double *cglist;                      // Clebsch-Gordan coeffs
   int idxcg_max;
   int chunksize;
+
+  class ComputeOrientOrderAtom *c_orientorder;
+  char *id_orientorder;
+  double **normv;
 };
 
 }
@@ -79,16 +87,16 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Compute orientorder/atom requires a pair style be defined
+E: Compute coarseorientorder/atom requires a pair style be defined
 
 Self-explanatory.
 
-E: Compute orientorder/atom cutoff is longer than pairwise cutoff
+E: Compute coarseorientorder/atom cutoff is longer than pairwise cutoff
 
 Cannot compute order parameter beyond cutoff.
 
-W: More than one compute orientorder/atom
+W: More than one compute coarseorientorder/atom
 
-It is not efficient to use compute orientorder/atom more than once.
+It is not efficient to use compute coarseorientorder/atom more than once.
 
 */
