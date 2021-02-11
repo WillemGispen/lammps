@@ -38,6 +38,12 @@ class ComputeOrientOrderAtom : public Compute {
   int *qlist;
   int nqlist;
 
+  struct Sort {                     // data structure for sorting neighbors
+    int nearest;                    // local ID of neighbor atom
+    double distsq;                  // distance between center and neighbor atom
+    double rlist[3];                // displacement between center and neighbor atom
+  };
+
  protected:
   int nmax,maxneigh,ncol;
   class NeighList *list;
@@ -64,6 +70,9 @@ class ComputeOrientOrderAtom : public Compute {
   double *cglist;                      // Clebsch-Gordan coeffs
   int idxcg_max;
   int chunksize;
+  
+  Sort *sort;
+  static int compare(const void *, const void *);
 };
 
 }

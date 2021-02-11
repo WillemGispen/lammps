@@ -14,6 +14,8 @@
 /* ----------------------------------------------------------------------
    Contributing author:  Aidan Thompson (SNL)
                          Axel Kohlmeyer (Temple U)
+                         Koenraad Janssens and David Olmsted (SNL)
+                         Willem Gispen (UU)
 ------------------------------------------------------------------------- */
 
 #include "compute_orientorder_atom.h"
@@ -45,12 +47,15 @@ using namespace MathConst;
 
 #define QEPSILON 1.0e-6
 
+#define SANN -8
+
 /* ---------------------------------------------------------------------- */
 
 ComputeOrientOrderAtom::ComputeOrientOrderAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
   qlist(nullptr), distsq(nullptr), nearest(nullptr), rlist(nullptr),
-  qnarray(nullptr), qnm_r(nullptr), qnm_i(nullptr), cglist(nullptr)
+  qnarray(nullptr), qnm_r(nullptr), qnm_i(nullptr), cglist(nullptr),
+  sort(nullptr)
 {
   if (narg < 3 ) error->all(FLERR,"Illegal compute orientorder/atom command");
 
@@ -83,6 +88,8 @@ ComputeOrientOrderAtom::ComputeOrientOrderAtom(LAMMPS *lmp, int narg, char **arg
         error->all(FLERR,"Illegal compute orientorder/atom command");
       if (strcmp(arg[iarg+1],"NULL") == 0) {
         nnn = 0;
+      } else if (strcmp(arg[iarg+1],"SANN") == 0) {
+        nnn = SANN;
       } else {
         nnn = utils::numeric(FLERR,arg[iarg+1],false,lmp);
         if (nnn <= 0)
@@ -277,6 +284,10 @@ void ComputeOrientOrderAtom::compute_peratom()
         memory->create(distsq,maxneigh,"orientorder/atom:distsq");
         memory->create(rlist,maxneigh,3,"orientorder/atom:rlist");
         memory->create(nearest,maxneigh,"orientorder/atom:nearest");
+        if (nnn == SANN) {
+          memory->destroy(sort);
+          sort = new Sort[jnum];
+        }
       }
 
       // loop over list of all neighbors within force cutoff
@@ -302,6 +313,17 @@ void ComputeOrientOrderAtom::compute_peratom()
         }
       }
 
+      // build sort structure
+      if (nnn == SANN) {
+        for (int j = 0; j < ncount; j++) {
+          sort[j].distsq = distsq[j];
+          sort[j].nearest = nearest[j];
+          sort[j].rlist[0] = rlist[j][0];
+          sort[j].rlist[1] = rlist[j][1];
+          sort[j].rlist[2] = rlist[j][2];
+        } 
+      }
+
       // if not nnn neighbors, order parameter = 0;
 
       if ((ncount == 0) || (ncount < nnn)) {
@@ -315,11 +337,57 @@ void ComputeOrientOrderAtom::compute_peratom()
       if (nnn > 0) {
         select3(nnn,ncount,distsq,nearest,rlist);
         ncount = nnn;
+      } else if (nnn == SANN) {
+        // sort all neighbors by distance
+        qsort(sort,ncount,sizeof(Sort),compare);
+
+        // read sort structure
+        for (int j = 0; j < ncount; j++) {
+          distsq[j] = sort[j].distsq;
+          nearest[j] = sort[j].nearest;
+          rlist[j][0] = sort[j].rlist[0];
+          rlist[j][1] = sort[j].rlist[1];
+          rlist[j][2] = sort[j].rlist[2];
+        }
+
+        // select solid angle based nearest neighbors
+        int k = 3;
+        double rsum = sqrt(distsq[0]) + sqrt(distsq[1]) + sqrt(distsq[2]);
+        double r, rcut;
+        for (int j = 3; j < ncount; j++) {
+          r = sqrt(distsq[j]);
+          rcut = rsum / (k - 2);
+          if (rcut > r) {
+            k++;
+            rsum += r;
+          } else {
+            break;
+          }
+        }
+        ncount = k;
       }
 
       calc_boop(rlist, ncount, qn, qlist, nqlist);
     }
   }
+}
+
+/* ----------------------------------------------------------------------
+   compare two neighbors I and J in sort data structure
+   called via qsort in post_force() method
+   is a static method so can't access sort data structure directly
+   return -1 if I < J, 0 if I = J, 1 if I > J
+   do comparison based on rsq distance
+------------------------------------------------------------------------- */
+
+int ComputeOrientOrderAtom::compare(const void *pi, const void *pj)
+{
+  ComputeOrientOrderAtom::Sort *ineigh = (ComputeOrientOrderAtom::Sort *) pi;
+  ComputeOrientOrderAtom::Sort *jneigh = (ComputeOrientOrderAtom::Sort *) pj;
+
+  if (ineigh->distsq < jneigh->distsq) return -1;
+  else if (ineigh->distsq > jneigh->distsq) return 1;
+  return 0;
 }
 
 /* ----------------------------------------------------------------------

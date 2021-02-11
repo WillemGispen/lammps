@@ -37,12 +37,21 @@ class ComputeCoarseOrientOrderAtom : public Compute {
   double cutsq;
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
   int icompute, commflag;
+  int len_qnlist;
+  const static int max_len_qnlist = 1+2*(2*12+1);
   int *qlist;
   int nqlist;
 
+  struct Sort {                     // data structure for sorting neighbors
+    int nearest;                    // local ID of neighbor atom
+    double distsq;                  // distance between center and neighbor atom
+    double rlist[3];                // displacement between center and neighbor atom
+    double qnlist[max_len_qnlist];  // bond orientational order parameters and components
+  };
+
  protected:
   int nmax,maxneigh,ncol,nnn;
-  int iqlcomp_, jjqlcomp_, len_qnlist;
+  int iqlcomp_, jjqlcomp_;
   class NeighList *list;
   double *distsq;
   int *nearest;
@@ -72,6 +81,8 @@ class ComputeCoarseOrientOrderAtom : public Compute {
   class ComputeOrientOrderAtom *c_orientorder;
   char *id_orientorder;
   double **normv;
+  Sort *sort;
+  static int compare(const void *, const void *);
 };
 
 }

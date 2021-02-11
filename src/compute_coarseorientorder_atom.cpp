@@ -14,6 +14,7 @@
 /* ----------------------------------------------------------------------
    Contributing author:  Aidan Thompson (SNL)
                          Axel Kohlmeyer (Temple U)
+                         Koenraad Janssens and David Olmsted (SNL)
                          Willem Gispen (UU)
 ------------------------------------------------------------------------- */
 
@@ -50,13 +51,15 @@ using namespace MathConst;
 
 #define INVOKED_PERATOM 8
 
+#define SANN -8
+
 /* ---------------------------------------------------------------------- */
 
 ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
   qlist(nullptr), distsq(nullptr), nearest(nullptr), rlist(nullptr), qnlist(nullptr),
   qnarray(nullptr), qnm_r(nullptr), qnm_i(nullptr), cglist(nullptr),
-  id_orientorder(nullptr), normv(nullptr)
+  id_orientorder(nullptr), normv(nullptr), sort(nullptr)
 {
   if (narg < 3 ) error->all(FLERR,"Illegal compute coarseorientorder/atom command");
 
@@ -109,6 +112,8 @@ ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg
         error->all(FLERR,"Illegal compute coarseorientorder/atom command");
       if (strcmp(arg[iarg+1],"NULL") == 0) {
         nnn = 0;
+      } else if (strcmp(arg[iarg+1],"SANN") == 0) {
+        nnn = SANN;
       } else {
         nnn = utils::numeric(FLERR,arg[iarg+1],false,lmp);
         if (nnn <= 0)
@@ -224,6 +229,7 @@ void ComputeCoarseOrientOrderAtom::init()
   int iorientorder = modify->find_compute(id_orientorder);
   c_orientorder = (ComputeOrientOrderAtom*)(modify->compute[iorientorder]);
   int l = qlist[0];
+  len_qnlist = 1 + 2*(2*l+1);
   //  communicate real and imaginary 2*l+1 components of the normalized vector
   comm_forward = 2*(2*l+1);
   if (!(c_orientorder->qlcompflag))
@@ -302,7 +308,6 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
       ztmp = x[i][2];
       jlist = firstneigh[i];
       jnum = numneigh[i];
-      len_qnlist = 1 + 2*(2*qlist[0]+1);      
 
       // insure distsq and nearest arrays are long enough
 
@@ -311,11 +316,15 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
         memory->destroy(rlist);
         memory->destroy(qnlist);
         memory->destroy(nearest);
-        maxneigh = jnum;
-        memory->create(distsq,maxneigh+1,"coarseorientorder/atom:distsq");
-        memory->create(rlist,maxneigh+1,3,"coarseorientorder/atom:rlist");
-        memory->create(qnlist,maxneigh+1,len_qnlist,"coarseorientorder/atom:qnlist");
-        memory->create(nearest,maxneigh+1,"coarseorientorder/atom:nearest");
+        maxneigh = jnum+1;
+        memory->create(distsq,maxneigh,"coarseorientorder/atom:distsq");
+        memory->create(rlist,maxneigh,3,"coarseorientorder/atom:rlist");
+        memory->create(qnlist,maxneigh,len_qnlist,"coarseorientorder/atom:qnlist");
+        memory->create(nearest,maxneigh,"coarseorientorder/atom:nearest");
+        if (nnn == SANN) {
+          memory->destroy(sort);
+          sort = new Sort[maxneigh];
+        }
       }
 
       // loop over list of all neighbors within force cutoff
@@ -336,26 +345,16 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
         comm->forward_comm_compute(this);
       }
 
-      // compute rlist and read qnlist
-      // // fill rlist and qnlist with qn of particle itself (i)
-      nearest[0] = i;
-      distsq[0] = 0.0;
-      rlist[0][0] = 0.0;
-      rlist[0][1] = 0.0;
-      rlist[0][2] = 0.0;
-
-      // q_l of particle i
-      qnlist[0][0] = normv[i][iqlcomp_];            
-      for (int k = 1; k < len_qnlist; k++){
-        // q_lm of particle i
-        qnlist[0][k] = normv[i][jjqlcomp_ + k - 1];
-      }
-
-      // // fill rlist and qnlist of neighbors
-      int ncount = 1;
-      for (jj = 0; jj < jnum; jj++) {
-        j = jlist[jj];
-        j &= NEIGHMASK;
+      int ncount = 0;
+      for (jj = 0; jj < jnum+1; jj++) {
+        if (jj == 0) {
+          // particle i is neighbor 0 of itself
+          j = i;
+        }
+        else {
+          j = jlist[jj-1];
+          j &= NEIGHMASK;
+        }
 
         delx = xtmp - x[j][0];
         dely = ytmp - x[j][1];
@@ -367,24 +366,39 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
             distsq[ncount] = rsq;
             rlist[ncount][0] = delx;
             rlist[ncount][1] = dely;
-            rlist[ncount][2] = delz;
-
-            // fill qnlist
-            qnlist[ncount][0] = normv[j][iqlcomp_];
-            for (int k = 1; k < len_qnlist; k++){
-              qnlist[ncount][k] = normv[j][jjqlcomp_ + k - 1];
-            }
-            
+            rlist[ncount][2] = delz;            
             nearest[ncount] = j;
             ncount++;
           }
         }
       }
-      ncount--;
+
+
+      for (int jj = 0; jj < ncount; jj++) {
+        j = nearest[jj];
+
+        // fill qnlist
+        qnlist[jj][0] = normv[j][iqlcomp_];
+        for (int k = 1; k < len_qnlist; k++){
+          qnlist[jj][k] = normv[j][jjqlcomp_ + k - 1];
+        }
+
+        // build sort structure
+        if (nnn == SANN) {
+          sort[jj].distsq = distsq[jj];
+          sort[jj].nearest = nearest[jj];
+          sort[jj].rlist[0] = rlist[jj][0];
+          sort[jj].rlist[1] = rlist[jj][1];
+          sort[jj].rlist[2] = rlist[jj][2];
+          for (int k = 0; k < len_qnlist; k++){
+            sort[jj].qnlist[k] = qnlist[jj][k];
+          }
+        } 
+      }
 
       // if not nnn neighbors, order parameter = 0;
 
-      if ((ncount == 0) || ((ncount < nnn) && commflag)) {
+      if ((ncount-1 == 0) || ((ncount-1 < nnn) && commflag)) {
         for (int jj = 0; jj < ncol; jj++)
           qn[jj] = 0.0;
         continue;
@@ -393,9 +407,40 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
       // if nnn > 0, use only nearest nnn neighbors
       // also keep particle itself
       if (nnn > 0) {
-        int k = MIN(nnn+1, ncount+1);
-        select3(k,ncount+1,distsq,nearest,rlist,qnlist);
+        int k = MIN(nnn+1, ncount);
+        select3(k,ncount,distsq,nearest,rlist,qnlist);
         ncount = k;
+      } else if (nnn == SANN) {
+        // sort all neighbors by distance
+        qsort(sort,ncount,sizeof(Sort),compare);
+
+        // read sort structure
+        for (int j = 0; j < ncount; j++) {
+          distsq[j] = sort[j].distsq;
+          nearest[j] = sort[j].nearest;
+          rlist[j][0] = sort[j].rlist[0];
+          rlist[j][1] = sort[j].rlist[1];
+          rlist[j][2] = sort[j].rlist[2];
+          for (int k = 0; k < len_qnlist; k++){
+            qnlist[j][k] = sort[j].qnlist[k];
+          }
+        }
+
+        // select solid angle based nearest neighbors
+        int k = 3;
+        double rsum = sqrt(distsq[1]) + sqrt(distsq[2]) + sqrt(distsq[3]);
+        double r, rcut;
+        for (int j = 4; j < ncount; j++) {
+          r = sqrt(distsq[j]);
+          rcut = rsum / (k - 2);
+          if (rcut > r) {
+            k++;
+            rsum += r;
+          } else {
+            break;
+          }
+        }
+        ncount = k+1;
       }
 
       calc_boop(rlist, qnlist, ncount, qn, qlist, nqlist);
@@ -435,6 +480,23 @@ void ComputeCoarseOrientOrderAtom::unpack_forward_comm(int n, int first, double 
   }
 }
 
+/* ----------------------------------------------------------------------
+   compare two neighbors I and J in sort data structure
+   called via qsort in post_force() method
+   is a static method so can't access sort data structure directly
+   return -1 if I < J, 0 if I = J, 1 if I > J
+   do comparison based on rsq distance
+------------------------------------------------------------------------- */
+
+int ComputeCoarseOrientOrderAtom::compare(const void *pi, const void *pj)
+{
+  ComputeCoarseOrientOrderAtom::Sort *ineigh = (ComputeCoarseOrientOrderAtom::Sort *) pi;
+  ComputeCoarseOrientOrderAtom::Sort *jneigh = (ComputeCoarseOrientOrderAtom::Sort *) pj;
+
+  if (ineigh->distsq < jneigh->distsq) return -1;
+  else if (ineigh->distsq > jneigh->distsq) return 1;
+  return 0;
+}
 
 /* ----------------------------------------------------------------------
    memory usage of local atom-based array
@@ -582,7 +644,7 @@ void ComputeCoarseOrientOrderAtom::calc_boop(double **rlist,
     }
   }
 
-  for(int ineigh = 0; ineigh < ncount + 1; ineigh++) {
+  for(int ineigh = 0; ineigh < ncount; ineigh++) {
 
     // Check if distance is non-zero
     if (ineigh != 0) {
@@ -615,7 +677,7 @@ void ComputeCoarseOrientOrderAtom::calc_boop(double **rlist,
 
   // convert sums to averages
 
-  double facn = 1.0 / (ncount + 1);
+  double facn = 1.0 / (ncount);
 
   for (int il = 0; il < nqlist; il++) {
     int l = qlist[il];
