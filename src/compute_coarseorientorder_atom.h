@@ -38,7 +38,7 @@ class ComputeCoarseOrientOrderAtom : public Compute {
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
   int icompute, commflag;
   int len_qnlist;
-  const static int max_len_qnlist = 1+2*(2*12+1);
+  const static int max_len_qnlist = 350; // 350, approx 2*(2l+1) for l=1, ..., 12
   int *qlist;
   int nqlist;
 

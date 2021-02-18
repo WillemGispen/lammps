@@ -51,6 +51,7 @@ using namespace MathConst;
 
 #define INVOKED_PERATOM 8
 
+#define ALLCOMP -21
 #define SANN -8
 
 /* ---------------------------------------------------------------------- */
@@ -100,8 +101,19 @@ ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg
 
   nqlist = 1;
   memory->create(qlist,nqlist,"coarseorientorder/atom:qlist");
-  qlist[0] = c_orientorder->qlcomp;
-  qmax = qlist[0];
+  int l = c_orientorder->qlcomp;
+  qlist[0] = l;
+  len_qnlist = 1+2*(2*l+1);
+  if (qlist[0] == ALLCOMP) {
+    nqlist = c_orientorder->nqlist; 
+    qlist = c_orientorder->qlist;
+    len_qnlist = 0;
+    for (int il = 0; il < nqlist; il++) {
+      l = qlist[il];
+      len_qnlist += 1+2*(2*l+1);
+    }
+  }
+  qmax = 12;
 
   // process optional args
 
@@ -228,10 +240,8 @@ void ComputeCoarseOrientOrderAtom::init()
 
   int iorientorder = modify->find_compute(id_orientorder);
   c_orientorder = (ComputeOrientOrderAtom*)(modify->compute[iorientorder]);
-  int l = qlist[0];
-  len_qnlist = 1 + 2*(2*l+1);
   //  communicate real and imaginary 2*l+1 components of the normalized vector
-  comm_forward = 2*(2*l+1);
+  comm_forward = len_qnlist;
   if (!(c_orientorder->qlcompflag))
     error->all(FLERR,"Compute coarseorientorder/atom requires components "
                 "option in compute orientorder/atom");
@@ -378,9 +388,11 @@ void ComputeCoarseOrientOrderAtom::compute_peratom()
         j = nearest[jj];
 
         // fill qnlist
-        qnlist[jj][0] = normv[j][iqlcomp_];
-        for (int k = 1; k < len_qnlist; k++){
-          qnlist[jj][k] = normv[j][jjqlcomp_ + k - 1];
+        for (int il = 0; il < nqlist; il++) {
+          qnlist[jj][il] = normv[j][il];
+        }
+        for (int k = 0; k < len_qnlist - nqlist; k++){
+          qnlist[jj][nqlist + k] = normv[j][jjqlcomp_ + k];
         }
 
         // build sort structure
@@ -456,9 +468,11 @@ int ComputeCoarseOrientOrderAtom::pack_forward_comm(int n, int *list, double *bu
 { 
   int i,m=0,j;
   for (i = 0; i < n; ++i) {
-    buf[m++] = normv[i][iqlcomp_];            
-    for (int k = 1; k < len_qnlist; k++){
-      buf[m++] = normv[i][jjqlcomp_ + k - 1];
+    for (int il = 0; il < nqlist; il++) {
+      buf[m++] = normv[i][il];
+    }
+    for (int k = 0; k < len_qnlist - nqlist; k++){
+      buf[m++] = normv[i][jjqlcomp_ + k];
     }
   }
 
@@ -472,10 +486,11 @@ void ComputeCoarseOrientOrderAtom::unpack_forward_comm(int n, int first, double 
   int i,last,m=0,j;
   last = first + n;
   for (i = first; i < last; ++i) {
-    
-    normv[i][iqlcomp_] = buf[m++];            
-    for (int k = 1; k < len_qnlist; k++){
-      normv[i][jjqlcomp_ + k - 1] = buf[m++];
+    for (int il = 0; il < nqlist; il++) {
+      normv[i][il] = buf[m++];
+    }
+    for (int k = 0; k < len_qnlist - nqlist; k++){
+      normv[i][jjqlcomp_ + k] = buf[m++];
     }
   }
 }
@@ -658,12 +673,11 @@ void ComputeCoarseOrientOrderAtom::calc_boop(double **rlist,
     // get orientorder components of neighbor
     const double * const qn_ = qnlist[ineigh];
 
+    int jj = jjqlcomp_;
     for (int il = 0; il < nqlist; il++) {
       int l = qlist[il];
-      int jj = 0;
-
       double qnormfac = sqrt(MY_4PI/(2*l+1));
-      double qnfac = qn_[jj++]/qnormfac;
+      double qnfac = qn_[il]/qnormfac;
 
       // calculate sum of orientorder components over neighbors
       for(int m = 0; m < 2*l+1; m++) {

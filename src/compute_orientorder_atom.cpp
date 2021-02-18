@@ -47,7 +47,9 @@ using namespace MathConst;
 
 #define QEPSILON 1.0e-6
 
+#define ALLCOMP -21
 #define SANN -8
+
 
 /* ---------------------------------------------------------------------- */
 
@@ -133,6 +135,11 @@ ComputeOrientOrderAtom::ComputeOrientOrderAtom(LAMMPS *lmp, int narg, char **arg
       qlcompflag = 1;
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute orientorder/atom command");
+      if (strcmp(arg[iarg+1],"all") == 0) {
+        qlcomp = ALLCOMP;
+        iqlcomp = 0;
+        break;
+      } 
       qlcomp = utils::numeric(FLERR,arg[iarg+1],false,lmp);
       iqlcomp = -1;
       for (int il = 0; il < nqlist; il++)
@@ -164,7 +171,16 @@ ComputeOrientOrderAtom::ComputeOrientOrderAtom(LAMMPS *lmp, int narg, char **arg
   ncol = nqlist;
   if (wlflag) ncol += nqlist;
   if (wlhatflag) ncol += nqlist;
-  if (qlcompflag) ncol += 2*(2*qlcomp+1);
+  if (qlcompflag) {
+    if (qlcomp == ALLCOMP) {
+      for (int il = 0; il < nqlist; il++) {
+        int l = qlist[il];
+        ncol += 2*(2*l+1);
+      }
+    } else {
+    ncol += 2*(2*qlcomp+1);
+    }
+  }
 
   peratom_flag = 1;
   size_peratom_cols = ncol;
@@ -637,19 +653,29 @@ void ComputeOrientOrderAtom::calc_boop(double **rlist,
   // Calculate components of Q_l/|Q_l|, for l=qlcomp
 
   if (qlcompflag) {
-    int il = iqlcomp;
-    int l = qlcomp;
-    if (qn[il] < QEPSILON)
-      for(int m = 0; m < 2*l+1; m++) {
-        qn[jj++] = 0.0;
-        qn[jj++] = 0.0;
-      }
-    else {
-      double qnormfac = sqrt(MY_4PI/(2*l+1));
-      double qnfac = qnormfac/qn[il];
-      for(int m = 0; m < 2*l+1; m++) {
-        qn[jj++] = qnm_r[il][m] * qnfac;
-        qn[jj++] = qnm_i[il][m] * qnfac;
+    int il, l, ilstop;
+    if (qlcomp == ALLCOMP) {
+      il = 0;
+      ilstop = nqlist;
+    } else {
+      il = iqlcomp;
+      ilstop = il + 1;
+    }
+
+    for (; il < ilstop; il++) {
+      int l = qlist[il];
+      if (qn[il] < QEPSILON)
+        for(int m = 0; m < 2*l+1; m++) {
+          qn[jj++] = 0.0;
+          qn[jj++] = 0.0;
+        }
+      else {
+        double qnormfac = sqrt(MY_4PI/(2*l+1));
+        double qnfac = qnormfac/qn[il];
+        for(int m = 0; m < 2*l+1; m++) {
+          qn[jj++] = qnm_r[il][m] * qnfac;
+          qn[jj++] = qnm_i[il][m] * qnfac;
+        }
       }
     }
   }
