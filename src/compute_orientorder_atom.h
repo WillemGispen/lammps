@@ -33,7 +33,7 @@ class ComputeOrientOrderAtom : public Compute {
   virtual void compute_peratom();
   double memory_usage();
   double cutsq;
-  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
+  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag, aflag;
   int nnn;
   int *qlist;
   int nqlist;
@@ -50,13 +50,14 @@ class ComputeOrientOrderAtom : public Compute {
   double *distsq;
   int *nearest;
   double **rlist;
+  double *alist;
   int qmax;
   double **qnarray;
   double **qnm_r;
   double **qnm_i;
 
   void select3(int, int, double *, int *, double **);
-  void calc_boop(double **rlist, int numNeighbors,
+  void calc_boop(double **rlist, double *alist, int numNeighbors,
                  double qn[], int nlist[], int nnlist);
   double dist(const double r[]);
 
@@ -71,6 +72,11 @@ class ComputeOrientOrderAtom : public Compute {
   int idxcg_max;
   int chunksize;
   
+  class ComputeVoronoi *c_voronoi;
+  double **voro_local;
+  // double **voro_atom;
+  char *id_voronoi;
+
   Sort *sort;
   static int compare(const void *, const void *);
 };
