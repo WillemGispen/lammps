@@ -40,8 +40,11 @@ using namespace LAMMPS_NS;
 
 #define MAXNEAR 16
 #define MAXCOMMON 8
-#define ADAPT -7
-#define NNNADAPT 6
+#define ADAPTFCC -6
+#define ADAPTBCC -7
+#define NNNADAPTFCC 12
+#define NNNADAPTBCC1 8
+#define NNNADAPTBCC2 6
 #define SANN -8
 #define VORO -9
 #define CUTSQEPSILON 1.0e-6
@@ -60,6 +63,7 @@ ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
 
   peratom_flag = 1;
   size_peratom_cols = 1;
+  patternflag = 1;
   sigflag = 0;
 
   double cutoff = utils::numeric(FLERR,arg[3],false,lmp);
@@ -73,8 +77,10 @@ ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
         error->all(FLERR,"Illegal compute cna/atom command");
       if (strcmp(arg[iarg+1],"NULL") == 0) {
         nnn = 0;
-      } else if (strcmp(arg[iarg+1],"ADAPT") == 0) {
-        nnn = ADAPT;
+      } else if (strcmp(arg[iarg+1],"ADAPTFCC") == 0) {
+        nnn = ADAPTFCC;
+      } else if (strcmp(arg[iarg+1],"ADAPTBCC") == 0) {
+        nnn = ADAPTBCC;
       } else if (strcmp(arg[iarg+1],"SANN") == 0) {
         nnn = SANN;
       } else if (strcmp(arg[iarg+1],"VORO") == 0) {
@@ -85,6 +91,13 @@ ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
         if (nnn <= 0)
           error->all(FLERR,"Illegal compute cna/atom command");
       }
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"pattern") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute cna/atom command");
+      if (strcmp(arg[iarg+1],"yes") == 0) patternflag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0) patternflag = 0;
+      else error->all(FLERR,"Illegal compute cna/atom command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"sig") == 0) {
       if (iarg+2 > narg)
@@ -99,9 +112,7 @@ ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
   }
 
   nmax = 0;
-  if (sigflag) {
-    size_peratom_cols = 1 + MAXNEAR * 4;
-  }
+  size_peratom_cols = patternflag + sigflag * MAXNEAR * 4;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -215,102 +226,20 @@ void ComputeCNAAtom::compute_peratom()
   int nerror = 0;
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    xtmp = x[i][0];
-    ytmp = x[i][1];
-    ztmp = x[i][2];
     jlist = firstneigh[i];
     jnum = numneigh[i];
 
-    n = 0;
-    for (jj = 0; jj < jnum; jj++) {
-      j = jlist[jj];
-      j &= NEIGHMASK;
-
-      delx = xtmp - x[j][0];
-      dely = ytmp - x[j][1];
-      delz = ztmp - x[j][2];
-      rsq = delx*delx + dely*dely + delz*delz;
-      if (rsq < cutsq) {
-        if (nnn == 0) {
-          if (n < MAXNEAR) nearest[i][n++] = j;
-          else {
-            nerror++;
-            break;
-          }
-        } else {
-          distsq[i][n] = rsq;
-          nearest[i][n++] = j;
-        }        
-      }
-    }
-
+    find_neighbors(i, x, jlist, jnum, cutsq, nearest[i], distsq[i], &n);
     nnearest[i] = n;
     // if (n > 0) {
     //   error->warning(FLERR,fmt::format("NN =  {}",n),0);
     // }
 
     if (nnn != 0) {
-      double acutsq;
-      // compute adaptive cutoff
-      if (nnn == ADAPT) {
-        select3(NNNADAPT,n,distsq[i],nearest[i]);
-        acutsq = 0.0;
-        for (n = 0; n < NNNADAPT; n++) {
-          acutsq += distsq[i][n];
-        }
-        acutsq *= 0.5 * (1.0 + sqrt(2)) / NNNADAPT;
-        cutsq_[i] = acutsq;
-      } else if (nnn == SANN) {
-        qsort(distsq[i], n, sizeof(double), compare_neigh);
-        n = 3;
-        double rsum = sqrt(distsq[i][0]) + sqrt(distsq[i][1]) + sqrt(distsq[i][2]);
-        double r, rcut;
-        for (int j = 3; j < MAXNEAR; j++) {
-          r = sqrt(distsq[i][j]);
-          rcut = rsum / (n - 2);
-          if (rcut > r) {
-            n++;
-            rsum += r;
-          } else {
-            break;
-          }
-        }
-        acutsq = rcut*rcut;
-        cutsq_[i] = acutsq;
-      } else {
-        select3(nnn,n,distsq[i],nearest[i]);
-        acutsq = 0.0;
-        for (n = 0; n < nnn; n++) {
-          acutsq = MAX(distsq[i][n], acutsq);
-        }
-        acutsq += CUTSQEPSILON;
-        cutsq_[i] = acutsq;
-        // if (acutsq < 2 * CUTSQEPSILON) {
-        //   error->warning(FLERR,fmt::format("Cutoff {} too small",acutsq),0);
-        // }
-      }
-
-      // find nearest neighbors using adaptive cutoff
-      n = 0;
-      for (jj = 0; jj < jnum; jj++) {
-        j = jlist[jj];
-        j &= NEIGHMASK;
-
-        delx = xtmp - x[j][0];
-        dely = ytmp - x[j][1];
-        delz = ztmp - x[j][2];
-        rsq = delx*delx + dely*dely + delz*delz;
-        if (rsq < acutsq) {
-          if (n < MAXNEAR) nearest[i][n++] = j;
-          else {
-            nerror++;
-            break;
-          } 
-        }
-      }
-      nnearest[i] = n;
-      // if (n > 0) {
-      //   error->warning(FLERR,fmt::format("NN =  {}",n),0);
+      compute_acutsq(distsq[i], n, &cutsq_[i], &nnearest[i]);
+      select3(nnearest[i], n, distsq[i], nearest[i]);
+      // if (nnearest[i] > 0) {
+      //   error->warning(FLERR,fmt::format("NN =  {}",nnearest[i]),0);
       // }
     }
   }
@@ -363,7 +292,6 @@ void ComputeCNAAtom::compute_peratom()
       // in latter case, must exclude J from I's neighbor list
 
       // TODO: ensure bidirectional edges are accounted for
-      // TODO: make adaptive cutoff use function that takes in distsq
       if (j < nlocal) {
         firstflag = 1;
         ncommon = 0;
@@ -378,86 +306,19 @@ void ComputeCNAAtom::compute_peratom()
             }
 
       } else {
-        xtmp = x[j][0];
-        ytmp = x[j][1];
-        ztmp = x[j][2];
         jlist = firstneigh[i];
         jnum = numneigh[i];
+        find_neighbors(j, x, jlist, jnum, cutsq, onenearest, onedistsq, &n);
 
-        n = 0;
-        for (kk = 0; kk < jnum; kk++) {
-          k = jlist[kk];
-          k &= NEIGHMASK;
-          if (k == j) continue;
-
-          delx = xtmp - x[k][0];
-          dely = ytmp - x[k][1];
-          delz = ztmp - x[k][2];
-          rsq = delx*delx + dely*dely + delz*delz;
-
-          double acutsq = cutsq;
-          if (nnn != 0) {
-            acutsq = cutsq_[j];
-            if (acutsq < 2 * CUTSQEPSILON) {
-              // TODO: compute adaptive cutoff here
-              // error->warning(FLERR,fmt::format("Cutoff {} too small",cutsq),0);
-              // acutsq = cutsq;
-              acutsq = 1.4 * 1.4;
-            }
-          }
-
-          if (rsq < acutsq) {          
-            if (nnn == 0) {
-              if (n < MAXNEAR) onenearest[n++] = k;
-              else break;
-            } else {
-              onedistsq[n] = rsq;
-              onenearest[n++] = k;
-            }
-          }
-        }
-
-        if (nnn == -17) { // TODO: use adaptive cutoff
-          // compute adaptive cutoff
-          double acutsq;
-          if (nnn == ADAPT) {
-            select3(NNNADAPT,n,onedistsq,onenearest);
-            acutsq = 0.0;
-            for (n = 0; n < NNNADAPT; n++) {
-              acutsq += onedistsq[n];
-            }
-            acutsq *= 0.5 * (1.0 + sqrt(2)) / NNNADAPT;
-            cutsq_[j] = acutsq;
-          } else {
-            select3(nnn,n,onedistsq,onenearest);
-            acutsq = 0.0;
-            for (n = 0; n < nnn; n++) {
-              acutsq = MAX(onedistsq[n], acutsq);
-            }
-            acutsq += CUTSQEPSILON;
-            cutsq_[j] = acutsq;
-            if (acutsq < 2 * CUTSQEPSILON) {
-              error->warning(FLERR,fmt::format("Cutoff {} too small",acutsq),0);
-            }
-          }
-
-          // find nearest neighbors using adaptive cutoff
-          n = 0;
-          for (kk = 0; kk < jnum; kk++) {
-            k = jlist[kk];
-            k &= NEIGHMASK;
-            if (k == j) continue;
-
-            delx = xtmp - x[k][0];
-            dely = ytmp - x[k][1];
-            delz = ztmp - x[k][2];
-            rsq = delx*delx + dely*dely + delz*delz;
-            if (rsq < acutsq) {
-              if (n < MAXNEAR) onenearest[n++] = k;
-              else break;
-            }
-          }
-          nnearest[i] = n;
+        if (nnn != 0) {
+          int n_;
+          double dummy;
+          compute_acutsq(onedistsq, n, &dummy, &n_);
+          select3(n_, n, onedistsq, onenearest);
+          n = n_;
+          // if (n > 0) {
+          //   error->warning(FLERR,fmt::format("NN =  {}",n),0);
+          // }
         }
 
         firstflag = 1;
@@ -490,10 +351,13 @@ void ComputeCNAAtom::compute_peratom()
 
         double acutsq = cutsq;
         if (nnn != 0) {
-          acutsq = cutsq_[j]; // TODO: use adaptive cutoff here
+          acutsq = cutsq_[j];
           if (acutsq < 2 * CUTSQEPSILON) {
-            // error->warning(FLERR,fmt::format("Cutoff {} too small",cutsq),0);
-            // acutsq = cutsq;
+            jlist = firstneigh[i];
+            jnum = numneigh[i];
+            int nn;
+            find_neighbors(j, x, jlist, jnum, cutsq, onenearest, onedistsq, &n);
+            compute_acutsq(onedistsq, n, &acutsq, &nn);
             acutsq = 1.4 * 1.4;
           }
         }
@@ -559,7 +423,9 @@ void ComputeCNAAtom::compute_peratom()
     // output cna as array/atom
     double* cna_ = cna_array[i];
     int mm = 0;
-    cna_[mm++] = pattern[i];
+    if (patternflag) {
+      cna_[mm++] = pattern[i];
+    }
     if (sigflag) {
       // row-sort ascending
       qsort(cna,MAXNEAR,4*sizeof(int),compare_cna);
@@ -717,4 +583,111 @@ void ComputeCNAAtom::select3(int k, int n, double *arr, int *iarr)
       if (j <= k) l = i;
     }
   }
+}
+
+// Find neighbors of atom id within cutoff (cutsq)
+// uses jlist (of length jnum) for neighbor ids, x for positions
+// stores neighbor ids in nearest, distances in distsq, and number in *pn
+
+void ComputeCNAAtom::find_neighbors(int id, double **x, int *jlist, int jnum, double cutsq,
+                                    int *onenearest, double *onedistsq, int *pn)
+{
+  double xtmp, ytmp, ztmp, delx, dely, delz, rsq;
+  int n, k, kk;
+  xtmp = x[id][0];
+  ytmp = x[id][1];
+  ztmp = x[id][2];
+
+  n = 0;
+  for (kk = 0; kk < jnum; kk++) {
+    k = jlist[kk];
+    k &= NEIGHMASK;
+    if (k == id) continue;
+
+    delx = xtmp - x[k][0];
+    dely = ytmp - x[k][1];
+    delz = ztmp - x[k][2];
+    rsq = delx*delx + dely*dely + delz*delz;
+
+    if (rsq < cutsq) {          
+      if (nnn == 0) {
+        if (n < MAXNEAR) onenearest[n++] = k;
+        else break;
+      } else {
+        onedistsq[n] = rsq;
+        onenearest[n++] = k;
+      }
+    }
+  }
+  *pn = n;
+}
+
+// Compute adaptive cutoff using one of three different algorithms.
+// Stores adaptive cutoff in *p_acutsq
+// Stores number of neighbors within adaptive cutoff in *p_nnn
+
+void ComputeCNAAtom::compute_acutsq(double *distsq_, int m, double *p_acutsq, int *p_nnn)
+{
+  // copy so distsq_ is not changed
+  double distsq__[m];
+  for (int i = 0; i < m; i++){
+    distsq__[i] = distsq_[i];
+  }
+
+  qsort(distsq__, m, sizeof(double), compare_neigh);
+  double acutsq = 0.0;
+  int n;
+
+  if (nnn == ADAPTFCC) {
+    // compute acutsq
+    for (n = 0; n < NNNADAPTFCC; n++) {
+      acutsq += distsq__[n];
+    }
+    acutsq *= 0.5 * (1.0 + sqrt(2)) / NNNADAPTFCC;
+    // compute nnn
+    for (n = NNNADAPTFCC; n < MAXNEAR; n++) {
+      double rsq = distsq__[n];
+      if (rsq > acutsq) {
+        break;
+      }
+    }
+  } else if (nnn == ADAPTBCC) {
+    // compute acutsq
+    for (n = 0; n < NNNADAPTBCC1; n++) {
+      acutsq += 2 / sqrt(3) * distsq__[n] / NNNADAPTBCC1;
+      // acutsq += 1 / sqrt(3) * distsq__[n] / NNNADAPTBCC1;
+    }
+    for (n = NNNADAPTBCC1; n < NNNADAPTBCC1 + NNNADAPTBCC2; n++) {
+      acutsq += distsq__[n] / NNNADAPTBCC2;
+    }
+    acutsq *= 0.25 * (1.0 + sqrt(2));
+    // compute nnn
+    for (n = NNNADAPTBCC1 + NNNADAPTBCC2; n < MAXNEAR; n++) {
+      double rsq = distsq__[n];
+      if (rsq > acutsq) {
+        break;
+      }
+    }
+  } else if (nnn == SANN) {
+    double rsum = sqrt(distsq__[0]) + sqrt(distsq__[1]) + sqrt(distsq__[2]);
+    double r, rcut;
+    for (n = 3; n < MAXNEAR; n++) {
+      r = sqrt(distsq__[n]);
+      rcut = rsum / (n - 2);
+      if (r > rcut) {
+        break;
+      } else {
+        rsum += r;
+      }
+    }
+    acutsq = rcut*rcut;
+  } else {
+    for (n = 0; n < nnn; n++) {
+      acutsq = MAX(distsq__[n], acutsq);
+    }
+    acutsq += CUTSQEPSILON;
+  }
+
+  *p_nnn = n;
+  *p_acutsq = acutsq;
 }

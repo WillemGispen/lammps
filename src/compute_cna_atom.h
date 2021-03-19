@@ -32,6 +32,7 @@ class ComputeCNAAtom : public Compute {
   void init_list(int, class NeighList *);
   void compute_peratom();
   double memory_usage();
+  int patternflag;
   int sigflag;
 
  private:
@@ -48,6 +49,9 @@ class ComputeCNAAtom : public Compute {
   void select3(int, int, double *, int *);
   static int compare_cna(const void *, const void *);
   static int compare_neigh(const void *, const void *);
+  void find_neighbors(int, double **, int *, int, double,
+                      int *, double *, int *);
+  void compute_acutsq(double *, int, double *, int *);
 };
 
 }
