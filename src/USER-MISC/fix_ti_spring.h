@@ -71,6 +71,7 @@ class FixTISpring : public Fix {
   bigint t0;          // Initial time.
   int    sf;          // Switching function option.
   int    nlevels_respa;
+  int    leaveonflag;
 };
 
 }

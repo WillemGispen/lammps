@@ -52,7 +52,7 @@ FixTISpring::FixTISpring(LAMMPS *lmp, int narg, char **arg) :
 {
   if (lmp->citeme) lmp->citeme->add(cite_fix_ti_spring);
 
-  if (narg < 6 || narg > 8)
+  if (narg < 6 || narg > 10)
     error->all(FLERR,"Illegal fix ti/spring command");
 
   // Flags.
@@ -64,6 +64,7 @@ FixTISpring::FixTISpring(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
   extscalar = 1;
   extvector = 1;
+  leaveonflag = 0;
 
   // disallow resetting the time step, while this fix is defined
   time_depend = 1;
@@ -100,11 +101,21 @@ FixTISpring::FixTISpring(LAMMPS *lmp, int narg, char **arg) :
 
   // Coupling parameter initialization
   sf = 1;
-  if (narg > 6) {
-    if (strcmp(arg[6], "function") == 0) sf = utils::inumeric(FLERR,arg[7],false,lmp);
-    else error->all(FLERR,"Illegal fix ti/spring switching function");
-    if ((sf!=1) && (sf!=2))
-      error->all(FLERR,"Illegal fix ti/spring switching function");
+  int iarg = 6;
+  while (iarg < narg) {
+    if (strcmp(arg[iarg], "function") == 0) {
+      sf = utils::inumeric(FLERR,arg[iarg+1],false,lmp);
+      if ((sf!=1) && (sf!=2))
+        error->all(FLERR,"Illegal fix ti/spring switching function");
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"leaveon") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal fix ti/spring command");
+      if (strcmp(arg[iarg+1],"yes") == 0) leaveonflag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0) leaveonflag = 0;
+      else error->all(FLERR,"Illegal fix ti/spring command");
+      iarg += 2;
+    } else error->all(FLERR,"Illegal fix ti/spring command");
   }
   lambda  =  switch_func(0);
   dlambda = dswitch_func(0);
@@ -189,9 +200,11 @@ void FixTISpring::post_force(int /*vflag*/)
       dx = unwrap[0] - xoriginal[i][0];
       dy = unwrap[1] - xoriginal[i][1];
       dz = unwrap[2] - xoriginal[i][2];
-      f[i][0] = (1-lambda) * f[i][0] + lambda * (-k*dx);
-      f[i][1] = (1-lambda) * f[i][1] + lambda * (-k*dy);
-      f[i][2] = (1-lambda) * f[i][2] + lambda * (-k*dz);
+      double factor = (leaveonflag) ? 1.0 : (1-lambda);
+      
+      f[i][0] = factor * f[i][0] + lambda * (-k*dx);
+      f[i][1] = factor * f[i][1] + lambda * (-k*dy);
+      f[i][2] = factor * f[i][2] + lambda * (-k*dz);
       espring += k * (dx*dx + dy*dy + dz*dz);
     }
 
