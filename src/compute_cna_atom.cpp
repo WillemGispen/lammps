@@ -47,6 +47,7 @@ using namespace LAMMPS_NS;
 #define NNNADAPTBCC2 6
 #define SANN -8
 #define VORO -9
+#define SIGALL 2
 #define CUTSQEPSILON 1.0e-6
 
 enum{UNKNOWN,FCC,HCP,BCC,ICOS,OTHER};
@@ -103,6 +104,7 @@ ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute cna/atom command");
       if (strcmp(arg[iarg+1],"yes") == 0) sigflag = 1;
+      else if (strcmp(arg[iarg+1],"all") == 0) sigflag = SIGALL;
       else if (strcmp(arg[iarg+1],"no") == 0) sigflag = 0;
       else error->all(FLERR,"Illegal compute cna/atom command");
       iarg += 2;
@@ -112,7 +114,15 @@ ComputeCNAAtom::ComputeCNAAtom(LAMMPS *lmp, int narg, char **arg) :
   }
 
   nmax = 0;
-  size_peratom_cols = patternflag + sigflag * MAXNEAR * 4;
+  size_peratom_cols = patternflag;
+  if (sigflag){
+    if (sigflag == SIGALL) {
+      size_peratom_cols += MAXNEAR * 4;
+    } else {
+      size_peratom_cols += MAXNEAR;
+    } 
+  }
+   
 }
 
 /* ---------------------------------------------------------------------- */
@@ -432,9 +442,11 @@ void ComputeCNAAtom::compute_peratom()
 
       for (m = 0; m < MAXNEAR; m++) {
         cna_[mm++] = cna[m][NCOMMON];
-        cna_[mm++] = cna[m][NBOND];
-        cna_[mm++] = cna[m][MAXBOND];
-        cna_[mm++] = cna[m][MINBOND];
+        if (sigflag == SIGALL) {
+          cna_[mm++] = cna[m][NBOND];
+          cna_[mm++] = cna[m][MAXBOND];
+          cna_[mm++] = cna[m][MINBOND];
+        }
       }
     }
   }

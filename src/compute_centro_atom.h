@@ -40,6 +40,7 @@ class ComputeCentroAtom : public Compute {
   class NeighList *list;
   double *centro;
   int axes_flag;
+  int components_flag;
 
   void select(int, int, double *);
   void select2(int, int, double *, int *);

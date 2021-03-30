@@ -38,7 +38,7 @@ ComputeCentroAtom::ComputeCentroAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
   distsq(nullptr), nearest(nullptr), centro(nullptr)
 {
-  if (narg < 4 || narg > 6)
+  if (narg < 4 || narg > 8)
     error->all(FLERR,"Illegal compute centro/atom command");
 
   if (strcmp(arg[3],"fcc") == 0) nnn = 12;
@@ -48,6 +48,7 @@ ComputeCentroAtom::ComputeCentroAtom(LAMMPS *lmp, int narg, char **arg) :
   // default values
 
   axes_flag = 0;
+  components_flag = 0;
 
   // optional keywords
 
@@ -60,6 +61,13 @@ ComputeCentroAtom::ComputeCentroAtom(LAMMPS *lmp, int narg, char **arg) :
       else if (strcmp(arg[iarg+1],"no") == 0) axes_flag = 0;
       else error->all(FLERR,"Illegal compute centro/atom command2");
       iarg += 2;
+    } if (strcmp(arg[iarg],"components") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute centro/atom command3");
+      if (strcmp(arg[iarg+1],"yes") == 0) components_flag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0) components_flag = 0;
+      else error->all(FLERR,"Illegal compute centro/atom command2");
+      iarg += 2;
     } else error->all(FLERR,"Illegal compute centro/atom command1");
   }
 
@@ -69,6 +77,10 @@ ComputeCentroAtom::ComputeCentroAtom(LAMMPS *lmp, int narg, char **arg) :
   peratom_flag = 1;
   if (!axes_flag) size_peratom_cols = 0;
   else size_peratom_cols = 10;
+  if (components_flag) {
+    size_peratom_cols += nnn % 2;
+  }
+  
 
   nmax = 0;
   maxneigh = 0;
@@ -299,7 +311,12 @@ void ComputeCentroAtom::compute_peratom()
       // centrosymmetry = sum of nhalf smallest squared values
 
       value = 0.0;
-      for (j = 0; j < nhalf; j++) value += pairs[j];
+      for (j = 0; j < nhalf; j++){
+        if (components_flag) {
+          array_atom[i][10+j] = pairs[j];
+        }
+        value += pairs[j];
+      }
       centro[i] = value;
 
     } else {

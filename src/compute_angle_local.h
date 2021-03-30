@@ -39,10 +39,12 @@ class ComputeAngleLocal : public Compute {
   int *bstyle,*vvar;
   char *tstr;
   char **vstr;
+  int nnn;
 
   int nmax;
   double *vlocal;
   double **alocal;
+  double **sig;
 
   int compute_angles(int);
   void reallocate(int);
