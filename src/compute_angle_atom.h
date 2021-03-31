@@ -33,10 +33,8 @@ class ComputeAngleAtom : public Compute {
   virtual void compute_peratom();
   double memory_usage();
   double cutsq;
-  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag, aflag;
   int nnn;
-  int *qlist;
-  int nqlist;
+  int bins;
 
   struct Sort {                     // data structure for sorting neighbors
     int nearest;                    // local ID of neighbor atom
@@ -51,27 +49,12 @@ class ComputeAngleAtom : public Compute {
   int *nearest;
   double **rlist;
   double *alist;
-  int qmax;
-  double **qnarray;
-  double **qnm_r;
-  double **qnm_i;
+  double **angle_array;
 
   void select3(int, int, double *, int *, double **);
-  void calc_boop(double **rlist, double *alist, int numNeighbors,
-                 double qn[], int nlist[], int nnlist);
+  void calc_angle(double **rlist, int ncount, double angles[]);
   double dist(const double r[]);
-  void spelling_transform(double **, double *, int);
-  void transform(double [3][3], double *);
-  void rotate(double, double, double, double *);
 
-  double polar_prefactor(int, int, double);
-  double associated_legendre(int, int, double);
-
-  static const int nmaxfactorial = 167;
-  static const double nfac_table[];
-  double factorial(int);
-  virtual void init_clebsch_gordan();
-  double *cglist;                      // Clebsch-Gordan coeffs
   int idxcg_max;
   int chunksize;
   
@@ -82,6 +65,7 @@ class ComputeAngleAtom : public Compute {
 
   Sort *sort;
   static int compare(const void *, const void *);
+  static int compare_angle(const void *, const void *);
 };
 
 }
@@ -97,16 +81,16 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Compute orientorder/atom requires a pair style be defined
+E: Compute angle/atom requires a pair style be defined
 
 Self-explanatory.
 
-E: Compute orientorder/atom cutoff is longer than pairwise cutoff
+E: Compute angle/atom cutoff is longer than pairwise cutoff
 
 Cannot compute order parameter beyond cutoff.
 
-W: More than one compute orientorder/atom
+W: More than one compute angle/atom
 
-It is not efficient to use compute orientorder/atom more than once.
+It is not efficient to use compute angle/atom more than once.
 
 */

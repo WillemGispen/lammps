@@ -50,8 +50,8 @@ using namespace MathConst;
 #define QEPSILON 1.0e-6
 
 #define ALLCOMP -21
-#define SANN -8
-#define VORO -9
+#define SANN -16
+#define VORO -17
 #define INVOKED_PERATOM 8
 #define INVOKED_LOCAL 16
 
@@ -60,33 +60,17 @@ using namespace MathConst;
 
 ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
-  qlist(nullptr), distsq(nullptr), nearest(nullptr), rlist(nullptr), alist(nullptr),
-  qnarray(nullptr), qnm_r(nullptr), qnm_i(nullptr), cglist(nullptr),
+  distsq(nullptr), nearest(nullptr), rlist(nullptr),
   sort(nullptr), id_voronoi(nullptr), voro_local(nullptr)
-  // voro_atom(nullptr),
 {
   if (narg < 3 ) error->all(FLERR,"Illegal compute angle/atom command");
 
   // set default values for optional args
 
   nnn = 12;
+  bins = 0;
   cutsq = 0.0;
-  wlflag = 0;
-  wlhatflag = 0;
-  aflag = 0;
-  qlcompflag = 0;
   chunksize = 16384;
-
-  // specify which orders to request
-
-  nqlist = 5;
-  memory->create(qlist,nqlist,"angle/atom:qlist");
-  qlist[0] = 4;
-  qlist[1] = 6;
-  qlist[2] = 8;
-  qlist[3] = 10;
-  qlist[4] = 12;
-  qmax = 12;
 
   // process optional args
 
@@ -104,6 +88,17 @@ ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
       } else {
         nnn = utils::numeric(FLERR,arg[iarg+1],false,lmp);
         if (nnn <= 0)
+          error->all(FLERR,"Illegal compute angle/atom command");
+      }
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"bins") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute angle/atom command");
+      if (strcmp(arg[iarg+1],"NULL") == 0) {
+        bins = 0;
+      } else {
+        bins = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+        if (bins <= 0)
           error->all(FLERR,"Illegal compute angle/atom command");
       }
       iarg += 2;
@@ -126,65 +121,6 @@ ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
       }
       
       iarg += 2;
-    } else if (strcmp(arg[iarg],"weight") == 0) {
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      if (strcmp(arg[iarg+1],"yes") == 0) aflag = 1;
-      else if (strcmp(arg[iarg+1],"no") == 0) aflag = 0;
-      else error->all(FLERR,"Illegal compute angle/atom command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"degrees") == 0) {
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      nqlist = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      if (nqlist <= 0)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      memory->destroy(qlist);
-      memory->create(qlist,nqlist,"angle/atom:qlist");
-      iarg += 2;
-      if (iarg+nqlist > narg)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      qmax = 0;
-      for (int il = 0; il < nqlist; il++) {
-        qlist[il] = utils::numeric(FLERR,arg[iarg+il],false,lmp);
-        if (qlist[il] < 0)
-          error->all(FLERR,"Illegal compute angle/atom command");
-        if (qlist[il] > qmax) qmax = qlist[il];
-      }
-      iarg += nqlist;
-    } else if (strcmp(arg[iarg],"wl") == 0) {
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      if (strcmp(arg[iarg+1],"yes") == 0) wlflag = 1;
-      else if (strcmp(arg[iarg+1],"no") == 0) wlflag = 0;
-      else error->all(FLERR,"Illegal compute angle/atom command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"wl/hat") == 0) {
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      if (strcmp(arg[iarg+1],"yes") == 0) wlhatflag = 1;
-      else if (strcmp(arg[iarg+1],"no") == 0) wlhatflag = 0;
-      else error->all(FLERR,"Illegal compute angle/atom command");
-      iarg += 2;
-    } else if (strcmp(arg[iarg],"components") == 0) {
-      qlcompflag = 1;
-      if (iarg+2 > narg)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      if (strcmp(arg[iarg+1],"all") == 0) {
-        qlcomp = ALLCOMP;
-        iqlcomp = 0;
-        break;
-      } 
-      qlcomp = utils::numeric(FLERR,arg[iarg+1],false,lmp);
-      iqlcomp = -1;
-      for (int il = 0; il < nqlist; il++)
-        if (qlcomp == qlist[il]) {
-          iqlcomp = il;
-          break;
-        }
-      if (iqlcomp == -1)
-        error->all(FLERR,"Illegal compute angle/atom command");
-      iarg += 2;
     } else if (strcmp(arg[iarg],"cutoff") == 0) {
       if (iarg+2 > narg)
         error->all(FLERR,"Illegal compute angle/atom command");
@@ -203,21 +139,12 @@ ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
     } else error->all(FLERR,"Illegal compute angle/atom command");
   }
 
-  ncol = nqlist;
-  if (wlflag) ncol += nqlist;
-  if (wlhatflag) ncol += nqlist;
-  if (qlcompflag) {
-    if (qlcomp == ALLCOMP) {
-      for (int il = 0; il < nqlist; il++) {
-        int l = qlist[il];
-        ncol += 2*(2*l+1);
-      }
-    } else {
-    ncol += 2*(2*qlcomp+1);
-    }
-  }
-
   peratom_flag = 1;
+  if (bins) {
+    ncol = bins;
+  } else {
+    ncol = (nnn * (nnn - 1)) / 2;
+  }
   size_peratom_cols = ncol;
 
   nmax = 0;
@@ -230,14 +157,9 @@ ComputeAngleAtom::~ComputeAngleAtom()
 {
   if (copymode) return;
 
-  memory->destroy(qnarray);
   memory->destroy(distsq);
   memory->destroy(rlist);
   memory->destroy(nearest);
-  memory->destroy(qlist);
-  memory->destroy(qnm_r);
-  memory->destroy(qnm_i);
-  memory->destroy(cglist);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -252,9 +174,6 @@ void ComputeAngleAtom::init()
     error->all(FLERR,"Compute angle/atom cutoff is "
                "longer than pairwise cutoff");
 
-  memory->create(qnm_r,nqlist,2*qmax+1,"angle/atom:qnm_r");
-  memory->create(qnm_i,nqlist,2*qmax+1,"angle/atom:qnm_i");
-
   // need an occasional full neighbor list
 
   int irequest = neighbor->request(this,instance_me);
@@ -264,13 +183,11 @@ void ComputeAngleAtom::init()
   neighbor->requests[irequest]->full = 1;
   neighbor->requests[irequest]->occasional = 1;
 
-  int count = 0;
-  for (int i = 0; i < modify->ncompute; i++)
-    if (strcmp(modify->compute[i]->style,"angle/atom") == 0) count++;
-  if (count > 1 && comm->me == 0)
-    error->warning(FLERR,"More than one compute angle/atom");
-
-  if (wlflag || wlhatflag) init_clebsch_gordan();
+  // int count = 0;
+  // for (int i = 0; i < modify->ncompute; i++)
+  //   if (strcmp(modify->compute[i]->style,"angle/atom") == 0) count++;
+  // if (count > 1 && comm->me == 0)
+  //   error->warning(FLERR,"More than one compute angle/atom");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -294,10 +211,10 @@ void ComputeAngleAtom::compute_peratom()
   // grow order parameter array if necessary
 
   if (atom->nmax > nmax) {
-    memory->destroy(qnarray);
+    memory->destroy(angle_array);
     nmax = atom->nmax;
-    memory->create(qnarray,nmax,ncol,"angle/atom:qnarray");
-    array_atom = qnarray;
+    memory->create(angle_array,nmax,ncol,"angle/atom:qnarray");
+    array_atom = angle_array;
   }
 
   // invoke full neighbor list (will copy or build if necessary)
@@ -314,11 +231,11 @@ void ComputeAngleAtom::compute_peratom()
 
   double **x = atom->x;
   int *mask = atom->mask;
-  memset(&qnarray[0][0],0,nmax*ncol*sizeof(double));
+  memset(&angle_array[0][0],0,nmax*ncol*sizeof(double));
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
-    double* qn = qnarray[i];
+    double* angle = angle_array[i];
     if (mask[i] & groupbit) {
       xtmp = x[i][0];
       ytmp = x[i][1];
@@ -331,12 +248,10 @@ void ComputeAngleAtom::compute_peratom()
       if (jnum > maxneigh) {
         memory->destroy(distsq);
         memory->destroy(rlist);
-        memory->destroy(alist);
         memory->destroy(nearest);
         maxneigh = jnum;
         memory->create(distsq,maxneigh,"angle/atom:distsq");
         memory->create(rlist,maxneigh,3,"angle/atom:rlist");
-        memory->create(alist,maxneigh,"angle/atom:alist");
         memory->create(nearest,maxneigh,"angle/atom:nearest");
         if (nnn == SANN) {
           memory->destroy(sort);
@@ -404,7 +319,7 @@ void ComputeAngleAtom::compute_peratom()
 
       if ((ncount == 0) || (ncount < nnn)) {
         for (int jj = 0; jj < ncol; jj++)
-          qn[jj] = 0.0;
+          angle[jj] = 0.0;
         continue;
       }
 
@@ -453,22 +368,7 @@ void ComputeAngleAtom::compute_peratom()
         ncount = k;
       }
 
-      // calculate face area weights     
-      for (int j = 0; j < ncount; j++) {
-        if (aflag) {
-          if (nnn == SANN){
-            double r = sqrt(distsq[j]);
-            alist[j] = 0.5 * (1 - r / rcut);
-          }
-          if (nnn == VORO){
-            alist[j] /= surface;
-          }
-        } else {
-          alist[j] = 1.0;
-        }
-      }
-
-      calc_boop(rlist, alist, ncount, qn, qlist, nqlist);
+      calc_angle(rlist, ncount, angle);
     }
   }
 }
@@ -491,6 +391,18 @@ int ComputeAngleAtom::compare(const void *pi, const void *pj)
   return 0;
 }
 
+
+int ComputeAngleAtom::compare_angle(const void *pi, const void *pj)
+{
+  double anglei = *(double*)pi;
+  double anglej = *(double*)pj;
+
+  if (anglei < anglej) return -1;
+  else if (anglei > anglej) return 1;
+  return 0;
+}
+
+
 /* ----------------------------------------------------------------------
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
@@ -498,8 +410,6 @@ int ComputeAngleAtom::compare(const void *pi, const void *pj)
 double ComputeAngleAtom::memory_usage()
 {
   double bytes = ncol*nmax * sizeof(double);
-  bytes += (qmax*(2*qmax+1)+maxneigh*4) * sizeof(double);
-  bytes += (nqlist+maxneigh) * sizeof(int);
   return bytes;
 }
 
@@ -601,176 +511,52 @@ void ComputeAngleAtom::select3(int k, int n, double *arr, int *iarr, double **ar
 }
 
 /* ----------------------------------------------------------------------
-   calculate the bond orientational order parameters
+   calculate the bond angles
 ------------------------------------------------------------------------- */
 
-void ComputeAngleAtom::calc_boop(double **rlist,
-                                       double *alist,
-                                       int ncount, double qn[],
-                                       int qlist[], int nqlist) {
-
-  for (int il = 0; il < nqlist; il++) {
-    int l = qlist[il];
-    for(int m = 0; m < 2*l+1; m++) {
-      qnm_r[il][m] = 0.0;
-      qnm_i[il][m] = 0.0;
-    }
+void ComputeAngleAtom::calc_angle(double **rlist, int ncount, double angles[])
+{
+  int m = 0;
+  int anglecount = 0;
+  for (m = 0; m < ncol; m++) {
+    angles[m] == 0.0;
   }
-
-  for(int ineigh = 0; ineigh < ncount; ineigh++) {
-    const double * const r = rlist[ineigh];
-    double rmag = dist(r);
-    if(rmag <= MY_EPSILON) {
-      return;
-    }
-    const double a = alist[ineigh];
-
-    double costheta = r[2] / rmag;
-    double expphi_r = r[0];
-    double expphi_i = r[1];
-    double rxymag = sqrt(expphi_r*expphi_r+expphi_i*expphi_i);
-    if(rxymag <= MY_EPSILON) {
-      expphi_r = 1.0;
-      expphi_i = 0.0;
-    } else {
-      double rxymaginv = 1.0/rxymag;
-      expphi_r *= rxymaginv;
-      expphi_i *= rxymaginv;
-    }
-
-    for (int il = 0; il < nqlist; il++) {
-      int l = qlist[il];
-
-      // calculate spherical harmonics
-      // Ylm, -l <= m <= l
-      // sign convention: sign(Yll(0,0)) = (-1)^l
-
-      qnm_r[il][l] += a * polar_prefactor(l, 0, costheta);
-      double expphim_r = expphi_r;
-      double expphim_i = expphi_i;
-      for(int m = 1; m <= +l; m++) {
-
-        double prefactor = a * polar_prefactor(l, m, costheta);
-        double ylm_r = prefactor * expphim_r;
-        double ylm_i = prefactor * expphim_i;
-        qnm_r[il][m+l] += ylm_r;
-        qnm_i[il][m+l] += ylm_i;
-        if(m & 1) {
-          qnm_r[il][-m+l] -= ylm_r;
-          qnm_i[il][-m+l] += ylm_i;
-        } else {
-          qnm_r[il][-m+l] += ylm_r;
-          qnm_i[il][-m+l] -= ylm_i;
-        }
-        double tmp_r = expphim_r*expphi_r - expphim_i*expphi_i;
-        double tmp_i = expphim_r*expphi_i + expphim_i*expphi_r;
-        expphim_r = tmp_r;
-        expphim_i = tmp_i;
+  
+  for(int ineigh = 0; ineigh < ncount-1; ineigh++) {
+    for(int jneigh = ineigh + 1; jneigh < ncount; jneigh++) {
+      const double * const ri = rlist[ineigh];
+      const double * const rj = rlist[jneigh];
+      double rmagi = dist(ri);
+      double rmagj = dist(rj);
+      if(rmagi <= MY_EPSILON || rmagj <= MY_EPSILON) {
+        return;
       }
 
-    }
-  }
+      double c;
+      c = ri[0]*rj[0] + ri[1]*rj[1] + ri[2]*rj[2];
+      c /= rmagi*rmagj;
+      if (c > 1.0) c = 1.0;
+      if (c < -1.0) c = -1.0;
 
-  // convert sums to averages
-
-  double facn = 1.0 / ncount;
-  for (int il = 0; il < nqlist; il++) {
-    int l = qlist[il];
-    for(int m = 0; m < 2*l+1; m++) {
-      qnm_r[il][m] *= facn;
-      qnm_i[il][m] *= facn;
-    }
-  }
-
-  // calculate Q_l
-  // NOTE: optional W_l_hat and components of Q_qlcomp use these stored Q_l values
-
-  int jj = 0;
-  for (int il = 0; il < nqlist; il++) {
-    int l = qlist[il];
-    double qnormfac = sqrt(MY_4PI/(2*l+1));
-    double qm_sum = 0.0;
-    for(int m = 0; m < 2*l+1; m++)
-      qm_sum += qnm_r[il][m]*qnm_r[il][m] + qnm_i[il][m]*qnm_i[il][m];
-    qn[jj++] = qnormfac * sqrt(qm_sum);
-  }
-
-  // calculate W_l
-
-  if (wlflag) {
-    int idxcg_count = 0;
-    for (int il = 0; il < nqlist; il++) {
-      int l = qlist[il];
-      double wlsum = 0.0;
-      for(int m1 = 0; m1 < 2*l+1; m1++) {
-        for(int m2 = MAX(0,l-m1); m2 < MIN(2*l+1,3*l-m1+1); m2++) {
-          int m = m1 + m2 - l;
-          double qm1qm2_r = qnm_r[il][m1]*qnm_r[il][m2] - qnm_i[il][m1]*qnm_i[il][m2];
-          double qm1qm2_i = qnm_r[il][m1]*qnm_i[il][m2] + qnm_i[il][m1]*qnm_r[il][m2];
-          wlsum += (qm1qm2_r*qnm_r[il][m] + qm1qm2_i*qnm_i[il][m])*cglist[idxcg_count];
-          idxcg_count++;
-        }
+      if (bins) {
+        m = floor(0.5 * (c + 1.0) * bins);
+        angles[m]++;
+        anglecount++;
+      } else {
+        angles[m++] = c;
       }
-      qn[jj++] = wlsum/sqrt(2*l+1);
+  
     }
   }
 
-  // calculate W_l_hat
-
-  if (wlhatflag) {
-    int idxcg_count = 0;
-    for (int il = 0; il < nqlist; il++) {
-      int l = qlist[il];
-      double wlsum = 0.0;
-      for(int m1 = 0; m1 < 2*l+1; m1++) {
-        for(int m2 = MAX(0,l-m1); m2 < MIN(2*l+1,3*l-m1+1); m2++) {
-          int m = m1 + m2 - l;
-          double qm1qm2_r = qnm_r[il][m1]*qnm_r[il][m2] - qnm_i[il][m1]*qnm_i[il][m2];
-          double qm1qm2_i = qnm_r[il][m1]*qnm_i[il][m2] + qnm_i[il][m1]*qnm_r[il][m2];
-          wlsum += (qm1qm2_r*qnm_r[il][m] + qm1qm2_i*qnm_i[il][m])*cglist[idxcg_count];
-          idxcg_count++;
-        }
-      }
-      if (qn[il] < QEPSILON)
-        qn[jj++] = 0.0;
-      else {
-        double qnormfac = sqrt(MY_4PI/(2*l+1));
-        double qnfac = qnormfac/qn[il];
-        qn[jj++] = wlsum/sqrt(2*l+1)*(qnfac*qnfac*qnfac);
-      }
+  if (bins) {
+    for (m = 0; m < ncol; m++) {
+      angles[m] /= anglecount;
     }
+  } else {
+    qsort(angles, size_peratom_cols, sizeof(double), compare_angle);
   }
-
-  // Calculate components of Q_l/|Q_l|, for l=qlcomp
-
-  if (qlcompflag) {
-    int il, l, ilstop;
-    if (qlcomp == ALLCOMP) {
-      il = 0;
-      ilstop = nqlist;
-    } else {
-      il = iqlcomp;
-      ilstop = il + 1;
-    }
-
-    for (; il < ilstop; il++) {
-      int l = qlist[il];
-      if (qn[il] < QEPSILON)
-        for(int m = 0; m < 2*l+1; m++) {
-          qn[jj++] = 0.0;
-          qn[jj++] = 0.0;
-        }
-      else {
-        double qnormfac = sqrt(MY_4PI/(2*l+1));
-        double qnfac = qnormfac/qn[il];
-        for(int m = 0; m < 2*l+1; m++) {
-          qn[jj++] = qnm_r[il][m] * qnfac;
-          qn[jj++] = qnm_i[il][m] * qnfac;
-        }
-      }
-    }
-  }
-
+  
 }
 
 /* ----------------------------------------------------------------------
