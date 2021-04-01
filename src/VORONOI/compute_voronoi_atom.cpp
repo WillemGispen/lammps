@@ -33,6 +33,8 @@
 #include "pair.h"
 
 #include <vector>
+#include <Eigen/Eigenvalues>
+using Eigen::MatrixXd;
 
 using namespace LAMMPS_NS;
 using namespace voro;
@@ -127,7 +129,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
       else if (strcmp(arg[iarg+1],"all") == 0) {
         peratom_flag = 1;
         sig_flag = 1;
-        size_peratom_cols += 2 * NNNPERATOM;
+        size_peratom_cols += 2 * NNNPERATOM + 6;
       }
       else error->all(FLERR,"Illegal compute voronoi/atom command");
       iarg += 2;
@@ -510,6 +512,7 @@ void ComputeVoronoi::processCell(voronoicell_neighbor &c, int i)
   int j,k, *mask = atom->mask;
   std::vector<int> neigh, norder, vlist;
   std::vector<double> narea, vcell;
+  std::vector<double> nor;
   bool have_narea = false;
 
   // zero out surface area if surface computation was requested
@@ -554,41 +557,65 @@ void ComputeVoronoi::processCell(voronoicell_neighbor &c, int i)
 
     // output face areas and distances
     if (sig_flag) {
-      // compute face areas
+      // compute face areas and normal vectors
       if (!have_narea) c.face_areas(narea);
+      c.normals(nor);
 
       // initialize
       double **x = atom->x;
       double alist[2*NNNPERATOM];
+      // double ntensor[6][6];
+      Eigen::MatrixXd ntensor(6,6);
       double distsq[2*NNNPERATOM];
       for (int j = 0; j < 2 * NNNPERATOM; j++) {
         alist[j] = 0.0;
         distsq[j] = cutsq;
         voro[i][3+j] = 0.0;
       }
+      for (int k = 0; k < 6; k++) {
+        for (int l = 0; l < 6; l++) {
+          ntensor(k,l) = 0.0;
+        }
+      }
 
-      // face areas
+      // face areas, distsq and Minkowski tensor
       int jj = 0;
       for (j=0; j<neighs; ++j) {
-        // if (neigh[j] >= 0 && mask[neigh[j]] && groupbit) {
-          alist[jj++] = narea[j] / voro[i][2];
-        // }
-      }
-      // distsq to neighbor
-      // normalize by Voronoi area
-      jj = 0;
-      for (j=0; j<neighs; ++j) {
+        // face area
+        alist[jj] = narea[j] / voro[i][2];
+
+        // Minkowski tensor
+        int i1s[6] = {0, 1, 2, 1, 0, 0};
+        int i2s[6] = {0, 1, 2, 2, 2, 1};
+        for (int k = 0; k < 6; k++) {
+          for (int l = 0; l < 6; l++) {
+            int k1 = i1s[k];
+            int k2 = i2s[k];
+            int l1 = i1s[l];
+            int l2 = i2s[l];
+            ntensor(k,l) = ntensor(k,l) + alist[jj] * nor[3*j+k1] * nor[3*j+k2] * nor[3*j+l1] * nor[3*j+l2];
+          }
+        }
+
+        // distsq
         if (neigh[j] >= 0 && mask[neigh[j]] && groupbit) {
           double dx = x[i][0] - x[neigh[j]][0];
           double dy = x[i][1] - x[neigh[j]][1];
           double dz = x[i][2] - x[neigh[j]][2];
           double dist = dx*dx + dy*dy + dz*dz;
-          distsq[jj++] = dist / voro[i][2];
+          distsq[jj] = dist / voro[i][2];
         }
+        jj++;
       }
 
       // sort by face area
       select3(NNNPERATOM, neighs, alist, distsq);
+
+      // diagonalize Minkowski tensor
+      Eigen::SelfAdjointEigenSolver<MatrixXd> es(ntensor);
+      // double eval[6];
+      Eigen::VectorXcd eval = es.eigenvalues();     
+
 
       // output to array/atom
       jj = 3;
@@ -598,6 +625,10 @@ void ComputeVoronoi::processCell(voronoicell_neighbor &c, int i)
       for (j=0; j<NNNPERATOM; j++) {
         voro[i][jj++] = distsq[j];
       }
+      for (j=0; j < 6; j++) {
+        voro[i][jj++] = (eval.real())(j);
+      }
+      
     }
 
     // histogram of number of face edges
