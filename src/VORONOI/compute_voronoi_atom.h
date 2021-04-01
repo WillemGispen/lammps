@@ -40,6 +40,7 @@ class ComputeVoronoi : public Compute {
   void compute_local();
   double memory_usage();
   int faces_flag;
+  int sig_flag;
 
   int pack_forward_comm(int, int *, double *, int, int *);
   void unpack_forward_comm(int, int, double *);
@@ -65,6 +66,11 @@ class ComputeVoronoi : public Compute {
   int *occvec, *sendocc, *lroot, *lnext, lmax, oldnatoms, oldnall;
   int nfaces, nfacesmax;
   double **faces;
+  
+  double cutsq;
+  void select3(int, int, double *, double *);
+  static int compare_area(const void *, const void *);
+  static int compare_dist(const void *, const void *);
 };
 
 }

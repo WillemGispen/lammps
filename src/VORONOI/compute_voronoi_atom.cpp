@@ -30,6 +30,7 @@
 #include "variable.h"
 #include "input.h"
 #include "force.h"
+#include "pair.h"
 
 #include <vector>
 
@@ -37,6 +38,7 @@ using namespace LAMMPS_NS;
 using namespace voro;
 
 #define FACESDELTA 10000
+#define NNNPERATOM 16
 
 /* ---------------------------------------------------------------------- */
 
@@ -50,6 +52,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
 
   size_peratom_cols = 2;
   peratom_flag = 1;
+  sig_flag = 0;
   comm_forward = 1;
   faces_flag = 0;
 
@@ -96,7 +99,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
         sgroupbit = group->bitmask[sgroup];
         surface = VOROSURF_GROUP;
       }
-      size_peratom_cols = 3;
+      size_peratom_cols += 1;
       iarg += 2;
     } else if (strcmp(arg[iarg], "edge_histo") == 0) {
       if (iarg + 2 > narg) error->all(FLERR,"Illegal compute voronoi/atom command");
@@ -121,6 +124,11 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
       if (iarg + 2 > narg) error->all(FLERR,"Illegal compute voronoi/atom command");
       if (strcmp(arg[iarg+1],"yes") == 0) peratom_flag = 1;
       else if (strcmp(arg[iarg+1],"no") == 0) peratom_flag = 0;
+      else if (strcmp(arg[iarg+1],"all") == 0) {
+        peratom_flag = 1;
+        sig_flag = 1;
+        size_peratom_cols += 2 * NNNPERATOM;
+      }
       else error->all(FLERR,"Illegal compute voronoi/atom command");
       iarg += 2;
     }
@@ -153,6 +161,11 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
     size_local_rows = 0;
     nfacesmax = 0;
   }
+
+  // if (sig_flag) {
+  //   size_peratom_cols += 2 * NNNPERATOM;
+  // }
+  
 }
 
 /* ---------------------------------------------------------------------- */
@@ -186,6 +199,9 @@ void ComputeVoronoi::init()
 {
   if (occupation && (atom->tag_enable == 0))
     error->all(FLERR,"Compute voronoi/atom occupation requires atom IDs");
+  if (sig_flag) {
+    cutsq = force->pair->cutforce * force->pair->cutforce;
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -536,6 +552,54 @@ void ComputeVoronoi::processCell(voronoicell_neighbor &c, int i)
           voro[i][2] += narea[j];
     }
 
+    // output face areas and distances
+    if (sig_flag) {
+      // compute face areas
+      if (!have_narea) c.face_areas(narea);
+
+      // initialize
+      double **x = atom->x;
+      double alist[2*NNNPERATOM];
+      double distsq[2*NNNPERATOM];
+      for (int j = 0; j < 2 * NNNPERATOM; j++) {
+        alist[j] = 0.0;
+        distsq[j] = cutsq;
+        voro[i][3+j] = 0.0;
+      }
+
+      // face areas
+      int jj = 0;
+      for (j=0; j<neighs; ++j) {
+        // if (neigh[j] >= 0 && mask[neigh[j]] && groupbit) {
+          alist[jj++] = narea[j] / voro[i][2];
+        // }
+      }
+      // distsq to neighbor
+      // normalize by Voronoi area
+      jj = 0;
+      for (j=0; j<neighs; ++j) {
+        if (neigh[j] >= 0 && mask[neigh[j]] && groupbit) {
+          double dx = x[i][0] - x[neigh[j]][0];
+          double dy = x[i][1] - x[neigh[j]][1];
+          double dz = x[i][2] - x[neigh[j]][2];
+          double dist = dx*dx + dy*dy + dz*dz;
+          distsq[jj++] = dist / voro[i][2];
+        }
+      }
+
+      // sort by face area
+      select3(NNNPERATOM, neighs, alist, distsq);
+
+      // output to array/atom
+      jj = 3;
+      for (j=0; j<NNNPERATOM; j++) {
+        voro[i][jj++] = alist[j];
+      }
+      for (j=0; j<NNNPERATOM; j++) {
+        voro[i][jj++] = distsq[j];
+      }
+    }
+
     // histogram of number of face edges
 
     if (maxedge>0) {
@@ -613,7 +677,6 @@ void ComputeVoronoi::processCell(voronoicell_neighbor &c, int i)
         }
     }
 
-
   } else if (i < atom->nlocal) voro[i][0] = voro[i][1] = 0.0;
 }
 
@@ -623,6 +686,42 @@ double ComputeVoronoi::memory_usage()
   // estimate based on average coordination of 12
   if (faces_flag) bytes += 12 * size_local_cols * nmax * sizeof(double);
   return bytes;
+}
+
+/* ----------------------------------------------------------------------
+   compare two Voronoi face areas
+   called via qsort in compute_peratom()
+   return -1 if I < J, 0 if I = J, 1 if I > J
+   do comparison based on relative area
+   sort descending
+------------------------------------------------------------------------- */
+
+int ComputeVoronoi::compare_area(const void *pi, const void *pj)
+{
+  double ai = *(double*)pi;
+  double aj = *(double*)pj;
+
+  if (ai < aj) return 1;
+  else if (ai > aj) return -1;
+  return 0;
+}
+
+/* ----------------------------------------------------------------------
+   compare two dist
+   called via qsort in compute_peratom()
+   return -1 if I < J, 0 if I = J, 1 if I > J
+   do comparison based on squared dist
+   sort ascending
+------------------------------------------------------------------------- */
+
+int ComputeVoronoi::compare_dist(const void *pi, const void *pj)
+{
+  double distsqi = *(double*)pi;
+  double distsqj = *(double*)pj;
+
+  if (distsqi < distsqj) return -1;
+  else if (distsqi > distsqj) return 1;
+  return 0;
 }
 
 void ComputeVoronoi::compute_vector()
@@ -659,4 +758,101 @@ void ComputeVoronoi::unpack_forward_comm(int n, int first, double *buf)
   int i,last,m=0;
   last = first + n;
   for (i = first; i < last; ++i) rfield[i] = buf[m++];
+}
+
+/* ----------------------------------------------------------------------
+   select3 routine from Numerical Recipes (slightly modified)
+   find k smallest values in array of length n
+   sort auxiliary arrays at same time
+------------------------------------------------------------------------- */
+
+// Use no-op do while to create single statement
+
+#define SWAP(a,b) do {       \
+    tmp = a; a = b; b = tmp; \
+  } while(0)
+
+#define ISWAP(a,b) do {        \
+    itmp = a; a = b; b = itmp; \
+  } while(0)
+
+// #define // SWAP3(a,b) do {                  \
+//     tmp = a[0]; a[0] = b[0]; b[0] = tmp; \
+//     tmp = a[1]; a[1] = b[1]; b[1] = tmp; \
+//     tmp = a[2]; a[2] = b[2]; b[2] = tmp; \
+//   } while(0)
+
+/* ---------------------------------------------------------------------- */
+
+void ComputeVoronoi::select3(int k, int n, double *arr, double *iarr)
+{
+  int i,ir,j,l,mid,ia,itmp;
+  double a,tmp; //,a3[3];
+
+  if (k > n) {
+    k = n;
+  }
+
+  arr--;
+  iarr--;
+  // arr3--;
+  l = 1;
+  ir = n;
+  for (;;) {
+    if (ir <= l+1) {
+      if (ir == l+1 && arr[ir] < arr[l]) {
+        SWAP(arr[l],arr[ir]);
+        ISWAP(iarr[l],iarr[ir]);
+        // // SWAP3(arr3[l],arr3[ir]);
+      }
+      return;
+    } else {
+      mid=(l+ir) >> 1;
+      SWAP(arr[mid],arr[l+1]);
+      ISWAP(iarr[mid],iarr[l+1]);
+      // // SWAP3(arr3[mid],arr3[l+1]);
+      if (arr[l] > arr[ir]) {
+        SWAP(arr[l],arr[ir]);
+        ISWAP(iarr[l],iarr[ir]);
+        // SWAP3(arr3[l],arr3[ir]);
+      }
+      if (arr[l+1] > arr[ir]) {
+        SWAP(arr[l+1],arr[ir]);
+        ISWAP(iarr[l+1],iarr[ir]);
+        // SWAP3(arr3[l+1],arr3[ir]);
+      }
+      if (arr[l] > arr[l+1]) {
+        SWAP(arr[l],arr[l+1]);
+        ISWAP(iarr[l],iarr[l+1]);
+        // SWAP3(arr3[l],arr3[l+1]);
+      }
+      i = l+1;
+      j = ir;
+      a = arr[l+1];
+      ia = iarr[l+1];
+      // a3[0] = arr3[l+1][0];
+      // a3[1] = arr3[l+1][1];
+      // a3[2] = arr3[l+1][2];
+      for (;;) {
+        do i++; while (arr[i] < a);
+        do j--; while (arr[j] > a);
+        if (j < i) break;
+        SWAP(arr[i],arr[j]);
+        ISWAP(iarr[i],iarr[j]);
+        // SWAP3(arr3[i],arr3[j]);
+      }
+      arr[l+1] = arr[j];
+      arr[j] = a;
+      iarr[l+1] = iarr[j];
+      iarr[j] = ia;
+      // arr3[l+1][0] = arr3[j][0];
+      // arr3[l+1][1] = arr3[j][1];
+      // arr3[l+1][2] = arr3[j][2];
+      // arr3[j][0] = a3[0];
+      // arr3[j][1] = a3[1];
+      // arr3[j][2] = a3[2];
+      if (j >= k) ir = j-1;
+      if (j <= k) l = i;
+    }
+  }
 }
