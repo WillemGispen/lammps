@@ -35,6 +35,8 @@ class ComputeAngleAtom : public Compute {
   double cutsq;
   int nnn;
   int bins;
+  int *qlist;
+  int nqlist;
 
   struct Sort {                     // data structure for sorting neighbors
     int nearest;                    // local ID of neighbor atom

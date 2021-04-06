@@ -71,6 +71,7 @@ ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
   bins = 0;
   cutsq = 0.0;
   chunksize = 16384;
+  nqlist = 0;
 
   // process optional args
 
@@ -136,6 +137,24 @@ ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
       if (chunksize <= 0)
         error->all(FLERR,"Illegal compute angle/atom command");
       iarg += 2;
+    } else if (strcmp(arg[iarg],"degrees") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal ompute angle/atom command");
+      nqlist = utils::numeric(FLERR,arg[iarg+1],false,lmp);
+      if (nqlist <= 0)
+        error->all(FLERR,"Illegal compute angle/atom command");
+      memory->create(qlist,nqlist,"angle/atom:qlist");
+      iarg += 2;
+      if (iarg+nqlist > narg)
+        error->all(FLERR,"Illegal compute angle/atom command");
+      // qmax = 0;
+      for (int il = 0; il < nqlist; il++) {
+        qlist[il] = utils::numeric(FLERR,arg[iarg+il],false,lmp);
+        if (qlist[il] < 0)
+          error->all(FLERR,"Illegal compute angle/atom command");
+        // if (qlist[il] > qmax) qmax = qlist[il];
+      }
+      iarg += nqlist;
     } else error->all(FLERR,"Illegal compute angle/atom command");
   }
 
@@ -145,6 +164,7 @@ ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
   } else {
     ncol = (nnn * (nnn - 1)) / 2;
   }
+  ncol += nqlist;
   size_peratom_cols = ncol;
 
   nmax = 0;
@@ -532,18 +552,27 @@ void ComputeAngleAtom::calc_angle(double **rlist, int ncount, double angles[])
         return;
       }
 
+      // compute angle
       double c;
       c = ri[0]*rj[0] + ri[1]*rj[1] + ri[2]*rj[2];
       c /= rmagi*rmagj;
       if (c > 1.0) c = 1.0;
       if (c < -1.0) c = -1.0;
+      double theta = acos(c);
 
+      // compute histogram
       if (bins) {
         m = floor(0.5 * (c + 1.0) * bins);
         angles[m]++;
         anglecount++;
       } else {
         angles[m++] = c;
+      }
+
+      // compute Fourier components
+      for (int il = 0; il < nqlist; il++) {
+        int l = qlist[il];
+        angles[m++] += cos(l * theta);
       }
   
     }
@@ -554,7 +583,7 @@ void ComputeAngleAtom::calc_angle(double **rlist, int ncount, double angles[])
       angles[m] /= anglecount;
     }
   } else {
-    qsort(angles, size_peratom_cols, sizeof(double), compare_angle);
+    qsort(angles, (nnn * (nnn - 1)) / 2, sizeof(double), compare_angle);
   }
   
 }
