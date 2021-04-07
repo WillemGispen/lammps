@@ -67,15 +67,14 @@ class ComputeVoronoi : public Compute {
   int nfaces, nfacesmax;
   double **faces;
   
-  void minkowski_tensor_invariants(std::vector<double>, std::vector<double>,
-                                   std::vector<double>, std::vector<double>, double *);
-  void minkowski_scalars(double *);
-  // void minkowski_w210(double *);
-  // void minkowski_w110(double *);
-  // void minkowski_w220(double *);
-  // void minkowski_w102(double *);
-  void minkowski_w202(std::vector<double>, std::vector<double>, double *);
-  void minkowski_w204(std::vector<double>, std::vector<double>, double *);
+  void minkowski_tensor_invariants(voro::voronoicell_neighbor&, double *);
+  void minkowski_scalars(double *, int *);
+  // void minkowski_w210(double *, int *);
+  // void minkowski_w110(double *, int *);
+  // void minkowski_w220(double *, int *);
+  // void minkowski_w102(double *, int *);
+  void minkowski_w202(std::vector<double>, std::vector<double>, double *, int *);
+  void minkowski_w204(std::vector<double>, std::vector<double>, double *, int *);
 
   double cutsq;
   void select3(int, int, double *, double *);

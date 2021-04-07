@@ -133,7 +133,7 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
       } else if (strcmp(arg[iarg+1],"inv") == 0) {
         peratom_flag = 1;
         sig_flag = 1;
-        size_peratom_cols += 9;
+        size_peratom_cols += 10;
       }
       else error->all(FLERR,"Illegal compute voronoi/atom command");
       iarg += 2;
@@ -656,11 +656,12 @@ void ComputeVoronoi::minkowski_tensor_invariants(voronoicell_neighbor &c, double
   std::vector<double> vertices;
   c.face_areas(areas);
   c.normals(normals);
-  c.edges(edges);
+  // c.edges(edges);
   c.vertices(vertices);
+  int jj = 0;
   
   // scalars
-  minkowski_scalars(v);
+  minkowski_scalars(v, &jj);
 
   // vectors
   // minkowski_w010(v); // c.centroid?
@@ -669,14 +670,14 @@ void ComputeVoronoi::minkowski_tensor_invariants(voronoicell_neighbor &c, double
 
   // rank 2
   // minkowski_w102(v);
-  minkowski_w202(v);
+  minkowski_w202(areas, normals, v, &jj);
   // minkowski_w220(v);
 
   // rank 4
-  minkowski_w204(v);
+  minkowski_w204(areas, normals, v, &jj);
 }
 
-void ComputeVoronoi::minkowski_scalars(double *v)
+void ComputeVoronoi::minkowski_scalars(double *v, int *jj)
 {
   double V = v[0];
   double A = v[2];
@@ -685,58 +686,62 @@ void ComputeVoronoi::minkowski_scalars(double *v)
   v[3] = 36 * M_PI * V * V / (A * A * A); // Q
 }
 
-void ComputeVoronoi::minkowski_w202(double *v)
+void ComputeVoronoi::minkowski_w202(std::vector<double> areas, std::vector<double> normals, double *v, int *jj)
 {
   // initialize
-  Eigen::MatrixXd ntensor2(3,3);
-  ntensor2.setZero();
+  Eigen::MatrixXd w202(3,3);
+  w202.setZero();
+  double A = v[1];
+  int neighs = (int)areas.size();
 
   // Minkowski tensor w202
-  for (j=0; j<neighs; ++j) {
+  for (int j=0; j<neighs; ++j) {
     for (int k = 0; k < 3; k++) {
       for (int l = 0; l < 3; l++) {
-        ntensor2(k,l) = ntensor2(k,l) + narea[j] / voro[i][2] * normals[3*j+k] * normals[3*j+l];
+        w202(k,l) = w202(k,l) + areas[j] / A * normals[3*j+k] * normals[3*j+l];
       }
     }
   }
   
   // diagonalize Minkowski tensor
-  Eigen::SelfAdjointEigenSolver<MatrixXd> es2(ntensor2);
-  Eigen::VectorXcd eval2 = es2.eigenvalues();
+  Eigen::SelfAdjointEigenSolver<MatrixXd> es(w202);
+  Eigen::VectorXcd eval = es.eigenvalues();
 
   // Eigenvalues of rank 2 tensor
-  for (j=0; j < 3; j++) {
-    v[jj++] = (eval2.real())(j);
+  for (int j=0; j < 3; j++) {
+    v[(*jj)++] = (eval.real())(j);
+  }
 }
 
-void ComputeVoronoi::minkowski_w204(double *v)
+void ComputeVoronoi::minkowski_w204(std::vector<double> areas, std::vector<double> normals, double *v, int *jj)
 {
-  Eigen::MatrixXd ntensor4(6,6);
-  ntensor4.setZero();
-
-  // Minkowski tensor w204
+  Eigen::MatrixXd w204(6,6);
+  w204.setZero();
+  double A = v[1];
+  int neighs = (int)areas.size();
   int i1s[6] = {0, 1, 2, 1, 0, 0};
   int i2s[6] = {0, 1, 2, 2, 2, 1};
 
-  for (j=0; j<neighs; ++j) {
+  // calculate Minkowski tensor w204
+  for (int j=0; j<neighs; ++j) {
     for (int k = 0; k < 6; k++) {
       for (int l = 0; l < 6; l++) {
         int k1 = i1s[k];
         int k2 = i2s[k];
         int l1 = i1s[l];
         int l2 = i2s[l];
-        ntensor4(k,l) = ntensor4(k,l) + narea[j] / voro[i][2] * normals[3*j+k1] * normals[3*j+k2] * normals[3*j+l1] * normals[3*j+l2];
+        w204(k,l) = w204(k,l) + areas[j] / A * normals[3*j+k1] * normals[3*j+k2] * normals[3*j+l1] * normals[3*j+l2];
       }
     }
   }
 
   // diagonalize Minkowski tensor
-  Eigen::SelfAdjointEigenSolver<MatrixXd> es4(ntensor4);
-  Eigen::VectorXcd eval4 = es4.eigenvalues();
+  Eigen::SelfAdjointEigenSolver<MatrixXd> es(w204);
+  Eigen::VectorXcd eval = es.eigenvalues();
 
   // Eigenvalues of rank 4 tensor
-  for (j=0; j < 6; j++) {
-    v[jj++] = (eval4.real())(j);
+  for (int j=0; j < 6; j++) {
+    v[(*jj)++] = (eval.real())(j);
   }
 }
 
