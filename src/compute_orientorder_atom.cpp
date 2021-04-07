@@ -53,6 +53,7 @@ using namespace MathConst;
 #define SANN -8
 #define VORO -9
 #define NSPELLING 12
+#define NNNAREA 16
 #define INVOKED_PERATOM 8
 #define INVOKED_LOCAL 16
 
@@ -75,6 +76,7 @@ ComputeOrientOrderAtom::ComputeOrientOrderAtom(LAMMPS *lmp, int narg, char **arg
   wlflag = 0;
   wlhatflag = 0;
   aflag = 0;
+  spelling_flag = 0;
   qlcompflag = 0;
   chunksize = 16384;
 
@@ -158,6 +160,13 @@ ComputeOrientOrderAtom::ComputeOrientOrderAtom(LAMMPS *lmp, int narg, char **arg
         error->all(FLERR,"Illegal compute orientorder/atom command");
       if (strcmp(arg[iarg+1],"yes") == 0) wlflag = 1;
       else if (strcmp(arg[iarg+1],"no") == 0) wlflag = 0;
+      else error->all(FLERR,"Illegal compute orientorder/atom command");
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"spelling") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute orientorder/atom command");
+      if (strcmp(arg[iarg+1],"yes") == 0) spelling_flag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0) spelling_flag = 0;
       else error->all(FLERR,"Illegal compute orientorder/atom command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"wl/hat") == 0) {
@@ -475,17 +484,9 @@ void ComputeOrientOrderAtom::compute_peratom()
         }
       }
 
-      spelling_transform(rlist, distsq, ncount);
-
-      // could also pick random orientation first
-      // double alpha, beta, gamma;
-      // alpha = acos(rand() * 2.0 / RAND_MAX - 1.0);
-      // beta = rand() * 2 * M_PI / RAND_MAX;
-      // gamma = rand() * 2 * M_PI / RAND_MAX;
-      // for (int j = 0; j < ncount; j++) {
-      //   rotate(alpha, beta, gamma, rlist[j]);
-      // }
-
+      if (spelling_flag) {
+        spelling_transform(rlist, distsq, ncount);
+      }
 
       calc_boop(rlist, alist, ncount, qn, qlist, nqlist);
     }
@@ -789,7 +790,6 @@ void ComputeOrientOrderAtom::calc_boop(double **rlist,
       }
     }
   }
-
 }
 
 void ComputeOrientOrderAtom::spelling_transform(double **rlist, double *distsq, int ncount)

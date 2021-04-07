@@ -33,7 +33,7 @@ class ComputeOrientOrderAtom : public Compute {
   virtual void compute_peratom();
   double memory_usage();
   double cutsq;
-  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag, aflag;
+  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag, aflag, spelling_flag;
   int nnn;
   int *qlist;
   int nqlist;
