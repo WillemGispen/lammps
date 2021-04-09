@@ -61,7 +61,7 @@ using namespace MathConst;
 ComputeAngleAtom::ComputeAngleAtom(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg),
   distsq(nullptr), nearest(nullptr), rlist(nullptr),
-  sort(nullptr), id_voronoi(nullptr), voro_local(nullptr)
+  sort(nullptr), id_voronoi(nullptr), voro_local(nullptr), angle_array(nullptr)
 {
   if (narg < 3 ) error->all(FLERR,"Illegal compute angle/atom command");
 
