@@ -94,6 +94,7 @@ ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg
   wlflag = c_orientorder->wlflag;
   wlhatflag = c_orientorder->wlhatflag;
   qlcompflag = 0;
+  lechnerflag = 1;
   commflag = 1;
   chunksize = 16384;
 
@@ -182,6 +183,13 @@ ComputeCoarseOrientOrderAtom::ComputeCoarseOrientOrderAtom(LAMMPS *lmp, int narg
         error->all(FLERR,"Illegal compute coarseorientorder/atom command");
       if (strcmp(arg[iarg+1],"yes") == 0) commflag = 1;
       else if (strcmp(arg[iarg+1],"no") == 0) commflag = 0;
+      else error->all(FLERR,"Illegal compute coarseorientorder/atom command");
+      iarg += 2;
+    } else if (strcmp(arg[iarg],"lechner") == 0) {
+      if (iarg+2 > narg)
+        error->all(FLERR,"Illegal compute coarseorientorder/atom command");
+      if (strcmp(arg[iarg+1],"yes") == 0) lechnerflag = 1;
+      else if (strcmp(arg[iarg+1],"no") == 0) lechnerflag = 0;
       else error->all(FLERR,"Illegal compute coarseorientorder/atom command");
       iarg += 2;
     } else if (strcmp(arg[iarg],"orientorder") == 0) {
@@ -651,6 +659,19 @@ void ComputeCoarseOrientOrderAtom::calc_boop(double **rlist,
                                        int ncount, double qn[],
                                        int qlist[], int nqlist) {
 
+  if (!lechnerflag) {
+    // average orientorder of neighbor
+    for(int ineigh = 0; ineigh < ncount; ineigh++) {
+      const double * const qn_ = qnlist[ineigh];
+
+      for (int il = 0; il < ncol; il++) {
+        double q = qn_[il];
+        qn[il] += q / ncount;
+      }
+    }
+    return;
+  }
+  
   for (int il = 0; il < nqlist; il++) {
     int l = qlist[il];
     for(int m = 0; m < 2*l+1; m++) {
