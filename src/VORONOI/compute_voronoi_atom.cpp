@@ -133,7 +133,8 @@ ComputeVoronoi::ComputeVoronoi(LAMMPS *lmp, int narg, char **arg) :
       } else if (strcmp(arg[iarg+1],"inv") == 0) {
         peratom_flag = 1;
         sig_flag = 1;
-        size_peratom_cols += 10;
+        size_peratom_cols += 2 + 3 + 3 + 6;
+        // 2 scalars, 3 from rank 1 tensor, 3 from rank 2 tensor, 6 from rank 4 tensor
       }
       else error->all(FLERR,"Illegal compute voronoi/atom command");
       iarg += 2;
@@ -652,46 +653,102 @@ void ComputeVoronoi::minkowski_tensor_invariants(voronoicell_neighbor &c, double
   // get face areas, normal vectors, edges, vertices
   std::vector<double> areas;
   std::vector<double> normals;
+  std::vector<int> neigh,f_vert;
   std::vector<double> edges;
   std::vector<double> vertices;
+  c.neighbors(neigh);
   c.face_areas(areas);
   c.normals(normals);
-  // c.edges(edges);
+  c.face_vertices(f_vert);
   c.vertices(vertices);
+  // compute_edge_info(neigh, f_vert, vertices, edges, normals_ids);
+
   int jj = 0;
   
   // scalars
   minkowski_scalars(v, &jj);
 
   // vectors
-  // minkowski_w010(v); // c.centroid?
-  // minkowski_w110(v);
+  minkowski_w010(c, v, &jj);
   // minkowski_w210(v);
 
   // rank 2
-  // minkowski_w102(v);
-  minkowski_w202(areas, normals, v, &jj);
+  minkowski_w102(areas, normals, v, &jj);
+  // minkowski_w202(v);
   // minkowski_w220(v);
 
   // rank 4
   minkowski_w204(areas, normals, v, &jj);
 }
 
+// void ComputeVoronoi::compute_edge_info(std::vector<int> neigh, std::vector<int> f_vert, std::vector<double> vertices,
+//                                        std::vector<double> edges, int *normals_ids)
+// {
+//   // loop over all faces to get common edges
+//   for(int f1=0, int fj1=0; f1+1<neigh.size(); f1++) {
+//     for(int f2=f1+1, int fj2=0; f2<neigh.size(); f2++) {
+//       // loop over all vertices to get common vertices
+//       for (int vj1 = fj1; vj1 < fj1 + f_vert[fj1]; vj1++) {
+//         for (int vj2 = fj2; vj2 < fj2 + f_vert[fj1]; vj2++) {
+//           if (f_vert[fj1] == f_vert[fj2]) {
+//             if (f_vert[fj1+1] == f_vert[fj2-1]) {
+              
+//             }
+//           }
+          
+//         }
+//       }
+      
+//       // Skip to the next entry in the face vertex list
+//       fj1 += f_vert[fj1]+1;
+//       fj2 += f_vert[fj2]+1;
+//     }
+//   }
+// }
+
+
 void ComputeVoronoi::minkowski_scalars(double *v, int *jj)
 {
-  double V = v[0];
-  double A = v[2];
-  v[1] = A;
-  v[2] = 1.0; // W2
-  v[3] = 36 * M_PI * V * V / (A * A * A); // Q
+  double V = v[0]; // W0
+  double A = v[2]; // W1
+  v[3] = 1.0; // W2
+  v[4] = 36 * M_PI * V * V / (A * A * A); // Q
+  *jj += 5;
 }
 
-void ComputeVoronoi::minkowski_w202(std::vector<double> areas, std::vector<double> normals, double *v, int *jj)
+void ComputeVoronoi::minkowski_w010(voronoicell_neighbor &c, double *v, int *jj)
+{
+  double x[3];
+  c.centroid(x[0], x[1], x[2]);
+
+  // compute tensor product of w010 with itself
+  Eigen::MatrixXd w010_sq(3,3);
+  w010_sq.setZero();
+  double A = v[2];
+  for (int k = 0; k < 3; k++) {
+    for (int l = 0; l < 3; l++) {
+      w010_sq(k,l) = x[k] * x[l] / A;
+    }
+  }
+
+  // diagonalize Minkowski tensor
+  Eigen::SelfAdjointEigenSolver<MatrixXd> es(w010_sq);
+  Eigen::VectorXcd eval = es.eigenvalues();
+
+  // Eigenvalues of rank 2 tensor
+  for (int j=0; j < 3; j++) {
+    v[(*jj)++] = (eval.real())(j);
+  }
+  
+  *jj +=3;
+}
+
+void ComputeVoronoi::minkowski_w102(std::vector<double> areas, std::vector<double> normals, double *v, int *jj)
 {
   // initialize
   Eigen::MatrixXd w202(3,3);
   w202.setZero();
-  double A = v[1];
+  double A = v[2];
   int neighs = (int)areas.size();
 
   // Minkowski tensor w202
@@ -717,7 +774,7 @@ void ComputeVoronoi::minkowski_w204(std::vector<double> areas, std::vector<doubl
 {
   Eigen::MatrixXd w204(6,6);
   w204.setZero();
-  double A = v[1];
+  double A = v[2];
   int neighs = (int)areas.size();
   int i1s[6] = {0, 1, 2, 1, 0, 0};
   int i2s[6] = {0, 1, 2, 2, 2, 1};
