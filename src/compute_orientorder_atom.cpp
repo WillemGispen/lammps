@@ -485,6 +485,19 @@ void ComputeOrientOrderAtom::compute_peratom()
       }
 
       if (spelling_flag) {
+        // first rotate randomly
+        double alpha, beta, gamma;
+        alpha = acos(rand() * 2.0 / RAND_MAX - 1.0);
+        beta = rand() * 2.0 * M_PI / RAND_MAX;
+        gamma = rand() * 2.0 * M_PI / RAND_MAX;
+
+        // error->warning(FLERR,fmt::format("Angles: {} {} {}", alpha, beta, gamma));
+
+        for (int j = 0; j < ncount; j++) {
+          rotate(alpha, beta, gamma, rlist[j]);
+        }
+
+        // then find local reference frame
         spelling_transform(rlist, distsq, ncount);
       }
 
