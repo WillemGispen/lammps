@@ -34,11 +34,12 @@ class ComputeOrientOrderAtom : public Compute {
   double memory_usage();
   double cutsq;
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
+  int nnn;
   int *qlist;
   int nqlist;
 
  protected:
-  int nmax,maxneigh,ncol,nnn;
+  int nmax,maxneigh,ncol;
   class NeighList *list;
   double *distsq;
   int *nearest;
