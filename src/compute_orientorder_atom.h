@@ -38,26 +38,28 @@ class ComputeOrientOrderAtom : public Compute {
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
   int nnn;
   int icompute, commflag, coarseflag;
-  int len_qnlist;
-  const static int max_len_qnlist = 350; // 350, approx 2*(2l+1) for l=1, ..., 12
+  int ncol_qn_neigh;
+  const static int max_len_qn_neigh = 350; // 350, approx 2*(2l+1) for l=1, ..., 12
   int *qlist;
   int nqlist;
 
  protected:
   int nmax,maxneigh,ncol;
-  int iqlcomp_, jjqlcomp_;
+  int jjqlcomp_0;
+  int *iqlcomp_;
+  int *jjqlcomp_;
   class NeighList *list;
   double *distsq;
   int *nearest;
   double **rlist;
-  double **qnlist;
+  double **qn_neigh;
   int qmax;
   double **qnarray;
   double **qnm_r;
   double **qnm_i;
 
-  void select3(int, int, double *, int *, double **, double **);
-  void calc_boop(double **rlist, double **qnlist,
+  void select3(int, int, double *, int *, double **);
+  void calc_boop(double **rlist, double **qn_neigh,
                  int numNeighbors, double qn[], int nlist[], int nnlist);
   double dist(const double r[]);
 
@@ -71,7 +73,7 @@ class ComputeOrientOrderAtom : public Compute {
 
   class ComputeOrientOrderAtom *c_orientorder;
   char *id_orientorder;
-  double **normv;
+  double **qn_local;
 };
 
 }
