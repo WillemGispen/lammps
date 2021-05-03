@@ -37,7 +37,7 @@ class ComputeOrientOrderAtom : public Compute {
   double cutsq;
   int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
   int nnn;
-  int icompute, commflag, coarseflag;
+  int icompute, commflag, averageflag;
   int ncol_qn_neigh;
   const static int max_len_qn_neigh = 350; // 350, approx 2*(2l+1) for l=1, ..., 12
   int *qlist;
