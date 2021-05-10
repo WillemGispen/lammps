@@ -46,7 +46,7 @@ class ComputeOrientOrderAtom : public Compute {
  protected:
   int nmax,maxneigh,ncol;
   int jjqlcomp_0;
-  int *iqlcomp_;
+  int *iql_;
   int *jjqlcomp_;
   class NeighList *list;
   double *distsq;
