@@ -42,7 +42,6 @@ class PairAsakuraOosaka : public Pair {
 
  protected:
   double cut_global;
-  double kappa;
   double T;
   double *rad;
   double **cut,**a,**offset;

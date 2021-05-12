@@ -12,12 +12,17 @@
 ------------------------------------------------------------------------- */
 
 /*
-Hard-core repulsive Yukawa potential
+Asakura-Oosaka pair potential (athermal)
 
-u(r) = A / r * exp(- k (r - 1))    , r > 1
-u(r) = LJ(r)                       , r < 1
+\beta * u(r) = - A * (1 + A1 * r + A3 * r^3)    , 1 < r < (1+q) (attractive)
+\beta * u(r) += WCA_{49,50} (r)                 , r < 50/49     (hard core)
 
-Assumed: particles have diameter 1
+where
+A = \beta\epsilon = \frac{\pi\sigma^3 (1 + q)^3 * z}{6}
+A1 = -\frac{3}{2*(1 + q)}
+A3 = \frac{1}{2*(1 + q)^3}
+
+Assumed: colloidal particles have diameter \sigma=1
 */
 
 #include "pair_asakura_oosaka.h"
@@ -61,7 +66,8 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r2inv,r,rinv,screening,forceyukawa,factor;
+  double rsq,r2inv,r,r3,rinv,screening,forceao,factor;
+  double qp1, fac1, fac3;
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -105,9 +111,11 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
         r = sqrt(rsq);
-        rinv = 1.0/r;
-        screening = exp(-kappa*(r-1.0));
-        forceyukawa = screening * a[itype][jtype] * (kappa + rinv) * r2inv;
+        r3 = rsq * r;
+        qp1 = cut[itype][jtype];
+        fac1 = -3 / (2 * qp1);
+        fac3 = 1 / (2 * qp1 * qp1 * qp1);
+        forceao = - T * a[itype][jtype] * (fac1 + 3 * fac3 * rsq);
 
         if (r < 50.0/49.0) {
           // add continuous hard sphere approx WCA(50,49)
@@ -116,10 +124,10 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
           r24inv = r12inv * r12inv;
           r48inv = r24inv * r24inv;
           b5049 = 134.55266;
-          forceyukawa += T * 2.0 / 3.0 * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
+          forceao += T * 2.0 / 3.0 * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
         }
 
-        fpair = factor * forceyukawa;
+        fpair = factor * forceao;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
@@ -131,7 +139,7 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          evdwl = a[itype][jtype] * screening * rinv - offset[itype][jtype];
+          evdwl = - T * a[itype][jtype] * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
           if (r < 50.0/49.0) {
             // add continuous hard sphere approx WCA(50,49)
             evdwl += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
@@ -176,11 +184,10 @@ void PairAsakuraOosaka::allocate()
 
 void PairAsakuraOosaka::settings(int narg, char **arg)
 {
-  if (narg != 3) error->all(FLERR,"Illegal pair_style command");
+  if (narg != 2) error->all(FLERR,"Illegal pair_style command");
 
-  kappa = utils::numeric(FLERR,arg[0],false,lmp);
-  cut_global = utils::numeric(FLERR,arg[1],false,lmp);
-  T = utils::numeric(FLERR,arg[2],false,lmp);  // temperature
+  cut_global = utils::numeric(FLERR,arg[0],false,lmp);
+  T = utils::numeric(FLERR,arg[1],false,lmp);  // temperature
 
   // reset cutoffs that have been explicitly set
 
@@ -236,8 +243,7 @@ double PairAsakuraOosaka::init_one(int i, int j)
   }
 
   if (offset_flag && (cut[i][j] > 0.0)) {
-    double screening = exp(-kappa * (cut[i][j] - 1.0));
-    offset[i][j] = a[i][j] * screening / cut[i][j];
+    error->all(FLERR,"Incorrect args for pair coefficients");
   } else offset[i][j] = 0.0;
 
   a[j][i] = a[i][j];
@@ -298,7 +304,6 @@ void PairAsakuraOosaka::read_restart(FILE *fp)
 
 void PairAsakuraOosaka::write_restart_settings(FILE *fp)
 {
-  fwrite(&kappa,sizeof(double),1,fp);
   fwrite(&cut_global,sizeof(double),1,fp);
   fwrite(&offset_flag,sizeof(int),1,fp);
   fwrite(&mix_flag,sizeof(int),1,fp);
@@ -311,12 +316,10 @@ void PairAsakuraOosaka::write_restart_settings(FILE *fp)
 void PairAsakuraOosaka::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
-    utils::sfread(FLERR,&kappa,sizeof(double),1,fp,nullptr,error);
     utils::sfread(FLERR,&cut_global,sizeof(double),1,fp,nullptr,error);
     utils::sfread(FLERR,&offset_flag,sizeof(int),1,fp,nullptr,error);
     utils::sfread(FLERR,&mix_flag,sizeof(int),1,fp,nullptr,error);
   }
-  MPI_Bcast(&kappa,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
   MPI_Bcast(&mix_flag,1,MPI_INT,0,world);
@@ -349,14 +352,18 @@ double PairAsakuraOosaka::single(int /*i*/, int /*j*/, int itype, int jtype, dou
                           double /*factor_coul*/, double factor_lj,
                           double &fforce)
 {
-  double r2inv,r,rinv,screening,forceyukawa,phi;
+  double r2inv,r,rinv,r3,screening,forceao,phi;
+  double qp1, fac1, fac3;
   double r6inv, r12inv, r24inv, r48inv, b5049;
 
   r2inv = 1.0/rsq;
   r = sqrt(rsq);
+  r3 = rsq * r;
   rinv = 1.0/r;
-  screening = exp(-kappa*(r-1.0));
-  forceyukawa = a[itype][jtype] * r2inv * screening * (kappa + rinv);
+  qp1 = cut[itype][jtype];
+  fac1 = -3 / (2 * qp1);
+  fac3 = 1 / (2 * qp1 * qp1 * qp1);
+  forceao = - T * a[itype][jtype] * (fac1 + 3 * fac3 * rsq);
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
@@ -365,12 +372,12 @@ double PairAsakuraOosaka::single(int /*i*/, int /*j*/, int itype, int jtype, dou
     r24inv = r12inv * r12inv;
     r48inv = r24inv * r24inv;
     b5049 = 134.55266;
-    forceyukawa += T * 2.0 / 3.0 * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
+    forceao += T * 2.0 / 3.0 * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
   }
 
-  fforce = factor_lj * forceyukawa;
+  fforce = factor_lj * forceao;
 
-  phi = a[itype][jtype] * screening * rinv - offset[itype][jtype];
+  phi = - T * a[itype][jtype] * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
