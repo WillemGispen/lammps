@@ -19,6 +19,7 @@
 #include "error.h"
 #include "force.h"
 #include "group.h"
+// #include "math_const.h"
 #include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
@@ -30,9 +31,15 @@
 #include <cmath>
 #include <cstring>
 
+
 using namespace LAMMPS_NS;
 
 #define INVOKED_PERATOM 8
+#define NNN 12
+#define NNNMAX 512
+#define ALLCOMP -21
+#define MY_4PI 12.56637061435917246
+#define QEPSILON 1.0e-6
 
 /* ---------------------------------------------------------------------- */
 
@@ -97,16 +104,22 @@ ComputeCoordAtom::ComputeCoordAtom(LAMMPS *lmp, int narg, char **arg) :
       error->all(FLERR,"Could not find compute coord/atom compute ID");
     if (!utils::strmatch(modify->compute[iorientorder]->style,"^orientorder/atom"))
       error->all(FLERR,"Compute coord/atom compute ID is not orientorder/atom");
+    c_orientorder = (ComputeOrientOrderAtom*)(modify->compute[iorientorder]);
 
-    threshold = utils::numeric(FLERR,arg[5],false,lmp);
-    if (threshold <= -1.0 || threshold >= 1.0)
-      error->all(FLERR,"Compute coord/atom threshold not between -1 and 1");
+    if (strcmp(arg[5],"output") == 0) {
+      nqlist = c_orientorder->nqlist;
+      ncol = NNN * (1 + nqlist);
+    } else{
+      threshold = utils::numeric(FLERR,arg[5],false,lmp);
+      if (threshold <= -1.0 || threshold >= 1.0)
+        error->all(FLERR,"Compute coord/atom threshold not between -1 and 1");
 
-    ncol = 1;
-    typelo = new int[ncol];
-    typehi = new int[ncol];
-    typelo[0] = 1;
-    typehi[0] = atom->ntypes;
+      ncol = 1;
+      typelo = new int[ncol];
+      typehi = new int[ncol];
+      typelo[0] = 1;
+      typehi[0] = atom->ntypes;
+    }
 
   } else error->all(FLERR,"Invalid cstyle in compute coord/atom");
 
@@ -174,7 +187,7 @@ void ComputeCoordAtom::init_list(int /*id*/, NeighList *ptr)
 
 void ComputeCoordAtom::compute_peratom()
 {
-  int i,j,m,ii,jj,inum,jnum,jtype,n;
+  int i,j,m,ii,jj,kk,inum,jnum,jtype,n;
   double xtmp,ytmp,ztmp,delx,dely,delz,rsq;
   int *ilist,*jlist,*numneigh,**firstneigh;
   double *count;
@@ -203,6 +216,7 @@ void ComputeCoordAtom::compute_peratom()
       c_orientorder->invoked_flag |= INVOKED_PERATOM;
     }
     nqlist = c_orientorder->nqlist;
+    qlist = c_orientorder->qlist;
     normv = c_orientorder->array_atom;
     comm->forward_comm_compute(this);
   }
@@ -293,6 +307,9 @@ void ComputeCoordAtom::compute_peratom()
 
     for (ii = 0; ii < inum; ii++) {
       i = ilist[ii];
+      count = carray[i];
+      for (int il = 0; il < nqlist; il++) count[il] = 0.0;
+
       if (mask[i] & groupbit) {
         xtmp = x[i][0];
         ytmp = x[i][1];
@@ -300,23 +317,70 @@ void ComputeCoordAtom::compute_peratom()
         jlist = firstneigh[i];
         jnum = numneigh[i];
 
-        n = 0;
-        for (jj = 0; jj < jnum; jj++) {
+        tagint jtag;
+        tagint *tag = atom->tag;
+
+        int ncount;
+        double distsq[NNNMAX];
+        int nearest[NNNMAX];
+        for (int ncount = 0; ncount < NNNMAX; ncount++) {
+          distsq[ncount] = 100.0;
+          nearest[ncount] = -1;
+        }
+
+        for (jj = 0, ncount=0; jj < jnum && ncount < NNNMAX; jj++) {
           j = jlist[jj];
           j &= NEIGHMASK;
           delx = xtmp - x[j][0];
           dely = ytmp - x[j][1];
           delz = ztmp - x[j][2];
           rsq = delx*delx + dely*dely + delz*delz;
-          if (rsq < cutsq) {
-            double dot_product = 0.0;
-            for (int m=0; m < 2*(2*l+1); m++) {
-              dot_product += normv[i][nqlist+m]*normv[j][nqlist+m];
-            }
-            if (dot_product > threshold) n++;
+          if (rsq < 1.4 * 1.4 && j >= 0) {
+            distsq[ncount] = rsq;
+            nearest[ncount] = j;
+            ncount++;
           }
         }
-        cvec[i] = n;
+
+        select3(NNN, NNNMAX, distsq, nearest);
+
+        for (jj = 0, kk = 0; jj < NNN; jj++) {
+          // write tag
+          j = nearest[jj];
+          if (j >= 0) jtag = tag[j];
+          else jtag = 0;
+          count[kk++] = jtag;
+
+          int k = nqlist;
+          for (int il = 0; il < nqlist; il++) {
+            int l = qlist[il];
+            double dot_product = 0.0;
+            for (int m=0; m < 2*(2*l+1); m++) {
+              if (j >= 0) {
+                double qnormfac = sqrt(MY_4PI/(2*l+1));
+                double qnfaci = normv[i][il]/qnormfac;
+                double qnfacj = normv[j][il]/qnormfac;
+                // error->warning(FLERR,fmt::format("NN =  {} {} {}",i,j,k),0);
+                double qi = normv[i][k];
+                double qj = normv[j][k];
+                // double qi *= qnfaci; // LD
+                // double qj *= qnfacj; // LD
+                // dot_product += (qj>0)*(qi+qj)*(qi+qj); // LD
+                dot_product += (qj>0)*qi*qj; // Wolde
+              }
+              k++;
+            }
+            count[kk++] = dot_product;
+            if (dot_product > threshold){
+              n++;
+            }
+          }
+        }
+        
+
+        if (ncol == 1) {
+          cvec[i] = n;
+        }
       } else cvec[i] = 0.0;
     }
   }
@@ -358,4 +422,79 @@ double ComputeCoordAtom::memory_usage()
 {
   double bytes = ncol*nmax * sizeof(double);
   return bytes;
+}
+
+
+/* ----------------------------------------------------------------------
+   select3 routine from Numerical Recipes (slightly modified)
+   find k smallest values in array of length n
+   sort auxiliary arrays at same time
+------------------------------------------------------------------------- */
+
+// Use no-op do while to create single statement
+
+#define SWAP(a,b) do {       \
+    tmp = a; a = b; b = tmp; \
+  } while(0)
+
+#define ISWAP(a,b) do {        \
+    itmp = a; a = b; b = itmp; \
+  } while(0)
+
+/* ---------------------------------------------------------------------- */
+
+
+void ComputeCoordAtom::select3(int k, int n, double *arr, int *iarr)
+{
+  int i,ir,j,l,mid,ia,itmp;
+  double a,tmp,a3[3];
+
+  arr--;
+  iarr--;
+  l = 1;
+  ir = n;
+  for (;;) {
+    if (ir <= l+1) {
+      if (ir == l+1 && arr[ir] < arr[l]) {
+        SWAP(arr[l],arr[ir]);
+        ISWAP(iarr[l],iarr[ir]);
+      }
+      return;
+    } else {
+      mid=(l+ir) >> 1;
+      SWAP(arr[mid],arr[l+1]);
+      ISWAP(iarr[mid],iarr[l+1]);
+      if (arr[l] > arr[ir]) {
+        SWAP(arr[l],arr[ir]);
+        ISWAP(iarr[l],iarr[ir]);
+      }
+      if (arr[l+1] > arr[ir]) {
+        SWAP(arr[l+1],arr[ir]);
+        ISWAP(iarr[l+1],iarr[ir]);
+      }
+      if (arr[l] > arr[l+1]) {
+        SWAP(arr[l],arr[l+1]);
+        ISWAP(iarr[l],iarr[l+1]);
+      }
+      i = l+1;
+      j = ir;
+      a = arr[l+1];
+      ia = iarr[l+1];
+      
+      for (;;) {
+        do i++; while (arr[i] < a);
+        do j--; while (arr[j] > a);
+        if (j < i) break;
+        SWAP(arr[i],arr[j]);
+        ISWAP(iarr[i],iarr[j]);
+      }
+      arr[l+1] = arr[j];
+      arr[j] = a;
+      iarr[l+1] = iarr[j];
+      iarr[j] = ia;
+      
+      if (j >= k) ir = j-1;
+      if (j <= k) l = i;
+    }
+  }
 }

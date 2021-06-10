@@ -34,6 +34,7 @@ class ComputeCoordAtom : public Compute {
   int pack_forward_comm(int, int *, double *, int, int *);
   void unpack_forward_comm(int, int, double *);
   double memory_usage();
+  void select3(int, int, double *, int *);
   enum {NONE,CUTOFF,ORIENT};
 
  protected:
@@ -53,6 +54,7 @@ class ComputeCoordAtom : public Compute {
   double threshold;
   double **normv;
   int cstyle,nqlist,l;
+  int *qlist;
 };
 
 }
