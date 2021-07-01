@@ -15,7 +15,7 @@
 Hard-core repulsive Yukawa potential
 
 u(r) = A / r * exp(- k (r - 1))    , r > 1
-u(r) = LJ(r)                       , r < 1
+u(r) = WCA-49-50(r)                , r < 1
 
 Assumed: particles have diameter 1
 */
@@ -109,7 +109,7 @@ void PairHardYukawa::compute(int eflag, int vflag)
         screening = exp(-kappa*(r-1.0));
         forceyukawa = screening * a[itype][jtype] * (kappa + rinv) * r2inv;
 
-        if (r < 50.0/49.0) {
+        if (r < 50.0/49.0 && hardflag) {
           // add continuous hard sphere approx WCA(50,49)
           r6inv = r2inv*r2inv*r2inv;
           r12inv = r6inv * r6inv;
@@ -120,7 +120,7 @@ void PairHardYukawa::compute(int eflag, int vflag)
         }
 
         fpair = factor * forceyukawa;
-        
+
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -132,7 +132,7 @@ void PairHardYukawa::compute(int eflag, int vflag)
 
         if (eflag) {
           evdwl = a[itype][jtype] * screening * rinv - offset[itype][jtype];
-          if (r < 50.0/49.0) {
+          if (r < 50.0/49.0 && hardflag) {
             // add continuous hard sphere approx WCA(50,49)
             evdwl += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
             evdwl += T * 2.0 / 3.0;
@@ -176,11 +176,19 @@ void PairHardYukawa::allocate()
 
 void PairHardYukawa::settings(int narg, char **arg)
 {
-  if (narg != 3) error->all(FLERR,"Illegal pair_style command");
+  if (narg != 3 && narg != 5) error->all(FLERR,"Illegal pair_style command");
 
   kappa = utils::numeric(FLERR,arg[0],false,lmp);
   cut_global = utils::numeric(FLERR,arg[1],false,lmp);
   T = utils::numeric(FLERR,arg[2],false,lmp);  // temperature
+
+  if (narg == 5) {
+    if (strcmp(arg[3],"hard") == 0) {
+        if (strcmp(arg[4],"yes") == 0) hardflag = 1;
+        else if (strcmp(arg[4],"no") == 0) hardflag = 0;
+        else error->all(FLERR,"Illegal pair_style command");
+    } else error->all(FLERR,"Illegal pair_style command");
+  }
 
   // reset cutoffs that have been explicitly set
 
@@ -358,7 +366,7 @@ double PairHardYukawa::single(int /*i*/, int /*j*/, int itype, int jtype, double
   screening = exp(-kappa*(r-1.0));
   forceyukawa = a[itype][jtype] * r2inv * screening * (kappa + rinv);
 
-  if (r < 50.0/49.0) {
+  if (r < 50.0/49.0 && hardflag) {
     // add continuous hard sphere approx WCA(50,49)
     r6inv = r2inv*r2inv*r2inv;
     r12inv = r6inv * r6inv;
@@ -372,7 +380,7 @@ double PairHardYukawa::single(int /*i*/, int /*j*/, int itype, int jtype, double
 
   phi = a[itype][jtype] * screening * rinv - offset[itype][jtype];
 
-  if (r < 50.0/49.0) {
+  if (r < 50.0/49.0 && hardflag) {
     // add continuous hard sphere approx WCA(50,49)
     phi += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
     phi += T * 2.0 / 3.0;

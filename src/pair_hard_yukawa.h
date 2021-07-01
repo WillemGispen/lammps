@@ -46,6 +46,7 @@ class PairHardYukawa : public Pair {
   double T;
   double *rad;
   double **cut,**a,**offset;
+  int hardflag;
 
   virtual void allocate();
 };
