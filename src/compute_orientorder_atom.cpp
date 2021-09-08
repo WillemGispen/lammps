@@ -247,9 +247,9 @@ void ComputeOrientOrderAtom::init()
     error->all(FLERR,"Compute orientorder/atom requires a "
                "pair style be defined");
   if (cutsq == 0.0) cutsq = force->pair->cutforce * force->pair->cutforce;
-  else if (sqrt(cutsq) > force->pair->cutforce)
-    error->all(FLERR,"Compute orientorder/atom cutoff is "
-               "longer than pairwise cutoff");
+  // else if (sqrt(cutsq) > force->pair->cutforce)
+  //   error->all(FLERR,"Compute orientorder/atom cutoff is "
+  //              "longer than pairwise cutoff");
 
   memory->create(qnm_r,nqlist,2*qmax+1,"orientorder/atom:qnm_r");
   memory->create(qnm_i,nqlist,2*qmax+1,"orientorder/atom:qnm_i");

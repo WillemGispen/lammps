@@ -12,20 +12,22 @@
 ------------------------------------------------------------------------- */
 
 /*
-Asakura-Oosaka pair potential (athermal)
+Asakura-Oosawa pair potential (athermal)
 
-\beta * u(r) = - A * (1 + A1 * r + A3 * r^3)    , 1 < r < (1+q) (attractive)
+\beta * u(r) = - A0 * (1 + A1 * r + A3 * r^3)    , 1 < r < (1+q) (attractive)
 \beta * u(r) += WCA_{49,50} (r)                 , r < 50/49     (hard core)
 
 where
-A = \beta\epsilon = \frac{\pi\sigma^3 (1 + q)^3 * z}{6}
+A0 = \eta_p^r \frac{(1+q)^3}{q^3}
 A1 = -\frac{3}{2*(1 + q)}
 A3 = \frac{1}{2*(1 + q)^3}
 
-Assumed: colloidal particles have diameter \sigma=1
+Assumed: colloidal particles have diameter \sigma=1.
+The coefficient passed via "pair_coeff" controls \eta_p^r,
+ i.e. the packing fraction of the ideal polymer reservoir.
 */
 
-#include "pair_asakura_oosaka.h"
+#include "pair_asakura_oosawa.h"
 
 #include <cmath>
 #include "atom.h"
@@ -40,14 +42,14 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-PairAsakuraOosaka::PairAsakuraOosaka(LAMMPS *lmp) : Pair(lmp)
+PairAsakuraOosawa::PairAsakuraOosawa(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
 }
 
 /* ---------------------------------------------------------------------- */
 
-PairAsakuraOosaka::~PairAsakuraOosaka()
+PairAsakuraOosawa::~PairAsakuraOosawa()
 {
   if (allocated) {
     memory->destroy(setflag);
@@ -62,12 +64,12 @@ PairAsakuraOosaka::~PairAsakuraOosaka()
 
 /* ---------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::compute(int eflag, int vflag)
+void PairAsakuraOosawa::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,r2inv,r,r3,rinv,screening,forceao,factor;
-  double qp1, fac1, fac3;
+  double qp1, q, fac0, fac1, fac3;
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -113,9 +115,11 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
         r = sqrt(rsq);
         r3 = rsq * r;
         qp1 = cut[itype][jtype];
+        q = qp1 - 1;
+        fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
         fac1 = -3 / (2 * qp1);
         fac3 = 1 / (2 * qp1 * qp1 * qp1);
-        forceao = - T * a[itype][jtype] * (fac1 + 3 * fac3 * rsq);
+        forceao = - T * fac0 * (fac1 + 3 * fac3 * rsq);
 
         if (r < 50.0/49.0) {
           // add continuous hard sphere approx WCA(50,49)
@@ -139,7 +143,7 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          evdwl = - T * a[itype][jtype] * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
+          evdwl = - T * fac0 * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
           if (r < 50.0/49.0) {
             // add continuous hard sphere approx WCA(50,49)
             evdwl += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
@@ -161,7 +165,7 @@ void PairAsakuraOosaka::compute(int eflag, int vflag)
    allocate all arrays
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::allocate()
+void PairAsakuraOosawa::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
@@ -182,7 +186,7 @@ void PairAsakuraOosaka::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::settings(int narg, char **arg)
+void PairAsakuraOosawa::settings(int narg, char **arg)
 {
   if (narg != 2) error->all(FLERR,"Illegal pair_style command");
 
@@ -203,7 +207,7 @@ void PairAsakuraOosaka::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::coeff(int narg, char **arg)
+void PairAsakuraOosawa::coeff(int narg, char **arg)
 {
   if (narg < 3 || narg > 4)
     error->all(FLERR,"Incorrect args for pair coefficients");
@@ -235,7 +239,7 @@ void PairAsakuraOosaka::coeff(int narg, char **arg)
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairAsakuraOosaka::init_one(int i, int j)
+double PairAsakuraOosawa::init_one(int i, int j)
 {
   if (setflag[i][j] == 0) {
     a[i][j] = mix_energy(a[i][i],a[j][j],1.0,1.0);
@@ -256,7 +260,7 @@ double PairAsakuraOosaka::init_one(int i, int j)
    proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::write_restart(FILE *fp)
+void PairAsakuraOosawa::write_restart(FILE *fp)
 {
   write_restart_settings(fp);
 
@@ -275,7 +279,7 @@ void PairAsakuraOosaka::write_restart(FILE *fp)
    proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::read_restart(FILE *fp)
+void PairAsakuraOosawa::read_restart(FILE *fp)
 {
   read_restart_settings(fp);
 
@@ -302,7 +306,7 @@ void PairAsakuraOosaka::read_restart(FILE *fp)
    proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::write_restart_settings(FILE *fp)
+void PairAsakuraOosawa::write_restart_settings(FILE *fp)
 {
   fwrite(&cut_global,sizeof(double),1,fp);
   fwrite(&offset_flag,sizeof(int),1,fp);
@@ -313,7 +317,7 @@ void PairAsakuraOosaka::write_restart_settings(FILE *fp)
    proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::read_restart_settings(FILE *fp)
+void PairAsakuraOosawa::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
     utils::sfread(FLERR,&cut_global,sizeof(double),1,fp,nullptr,error);
@@ -329,7 +333,7 @@ void PairAsakuraOosaka::read_restart_settings(FILE *fp)
    proc 0 writes to data file
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::write_data(FILE *fp)
+void PairAsakuraOosawa::write_data(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
     fprintf(fp,"%d %g\n",i,a[i][i]);
@@ -339,7 +343,7 @@ void PairAsakuraOosaka::write_data(FILE *fp)
    proc 0 writes all pairs to data file
 ------------------------------------------------------------------------- */
 
-void PairAsakuraOosaka::write_data_all(FILE *fp)
+void PairAsakuraOosawa::write_data_all(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
     for (int j = i; j <= atom->ntypes; j++)
@@ -348,12 +352,12 @@ void PairAsakuraOosaka::write_data_all(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairAsakuraOosaka::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+double PairAsakuraOosawa::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
                           double /*factor_coul*/, double factor_lj,
                           double &fforce)
 {
   double r2inv,r,rinv,r3,screening,forceao,phi;
-  double qp1, fac1, fac3;
+  double qp1, q, fac0, fac1, fac3;
   double r6inv, r12inv, r24inv, r48inv, b5049;
 
   r2inv = 1.0/rsq;
@@ -361,9 +365,11 @@ double PairAsakuraOosaka::single(int /*i*/, int /*j*/, int itype, int jtype, dou
   r3 = rsq * r;
   rinv = 1.0/r;
   qp1 = cut[itype][jtype];
+  q = qp1 - 1;
+  fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
   fac1 = -3 / (2 * qp1);
   fac3 = 1 / (2 * qp1 * qp1 * qp1);
-  forceao = - T * a[itype][jtype] * (fac1 + 3 * fac3 * rsq);
+  forceao = - T * fac0 * (fac1 + 3 * fac3 * rsq);
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
@@ -377,7 +383,7 @@ double PairAsakuraOosaka::single(int /*i*/, int /*j*/, int itype, int jtype, dou
 
   fforce = factor_lj * forceao;
 
-  phi = - T * a[itype][jtype] * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
+  phi = - T * fac0 * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)

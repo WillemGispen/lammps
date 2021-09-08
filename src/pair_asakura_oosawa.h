@@ -13,21 +13,21 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(AsakuraOosaka,PairAsakuraOosaka)
+PairStyle(AsakuraOosawa,PairAsakuraOosawa)
 
 #else
 
-#ifndef LMP_PAIR_AsakuraOosaka_H
-#define LMP_PAIR_AsakuraOosaka_H
+#ifndef LMP_PAIR_AsakuraOosawa_H
+#define LMP_PAIR_AsakuraOosawa_H
 
 #include "pair.h"
 
 namespace LAMMPS_NS {
 
-class PairAsakuraOosaka : public Pair {
+class PairAsakuraOosawa : public Pair {
  public:
-  PairAsakuraOosaka(class LAMMPS *);
-  virtual ~PairAsakuraOosaka();
+  PairAsakuraOosawa(class LAMMPS *);
+  virtual ~PairAsakuraOosawa();
   virtual void compute(int, int);
   void settings(int, char **);
   void coeff(int, char **);

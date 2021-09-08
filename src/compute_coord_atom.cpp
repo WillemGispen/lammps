@@ -149,9 +149,9 @@ void ComputeCoordAtom::init()
 
   if (force->pair == nullptr)
     error->all(FLERR,"Compute coord/atom requires a pair style be defined");
-  if (sqrt(cutsq) > force->pair->cutforce)
-    error->all(FLERR,
-               "Compute coord/atom cutoff is longer than pairwise cutoff");
+  // if (sqrt(cutsq) > force->pair->cutforce)
+  //   error->all(FLERR,
+  //              "Compute coord/atom cutoff is longer than pairwise cutoff");
 
   // need an occasional full neighbor list
 
