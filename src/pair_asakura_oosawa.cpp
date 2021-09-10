@@ -73,6 +73,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
+  T = 1.0;
   evdwl = 0.0;
   ev_init(eflag,vflag);
 
@@ -119,7 +120,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
         fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
         fac1 = -3 / (2 * qp1);
         fac3 = 1 / (2 * qp1 * qp1 * qp1);
-        forceao = - T * fac0 * (fac1 + 3 * fac3 * rsq);
+        forceao = T * fac0 * (fac1 + 3 * fac3 * rsq);
 
         if (r < 50.0/49.0) {
           // add continuous hard sphere approx WCA(50,49)
@@ -188,10 +189,10 @@ void PairAsakuraOosawa::allocate()
 
 void PairAsakuraOosawa::settings(int narg, char **arg)
 {
-  if (narg != 2) error->all(FLERR,"Illegal pair_style command");
+  if (narg != 1) error->all(FLERR,"Illegal pair_style command");
 
   cut_global = utils::numeric(FLERR,arg[0],false,lmp);
-  T = utils::numeric(FLERR,arg[1],false,lmp);  // temperature
+  // T = utils::numeric(FLERR,arg[1],false,lmp);  // temperature
 
   // reset cutoffs that have been explicitly set
 
@@ -360,6 +361,8 @@ double PairAsakuraOosawa::single(int /*i*/, int /*j*/, int itype, int jtype, dou
   double qp1, q, fac0, fac1, fac3;
   double r6inv, r12inv, r24inv, r48inv, b5049;
 
+  T = 1.0;
+
   r2inv = 1.0/rsq;
   r = sqrt(rsq);
   r3 = rsq * r;
@@ -369,7 +372,7 @@ double PairAsakuraOosawa::single(int /*i*/, int /*j*/, int itype, int jtype, dou
   fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
   fac1 = -3 / (2 * qp1);
   fac3 = 1 / (2 * qp1 * qp1 * qp1);
-  forceao = - T * fac0 * (fac1 + 3 * fac3 * rsq);
+  forceao = T * fac0 * (fac1 + 3 * fac3 * rsq);
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
