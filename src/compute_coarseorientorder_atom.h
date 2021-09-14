@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://www.lammps.org/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,29 +12,33 @@
 ------------------------------------------------------------------------- */
 
 #ifdef COMPUTE_CLASS
-// clang-format off
-ComputeStyle(orientorder/atom,ComputeOrientOrderAtom);
-// clang-format on
+
+ComputeStyle(coarseorientorder/atom,ComputeCoarseOrientOrderAtom)
+
 #else
 
-#ifndef LMP_COMPUTE_ORIENTORDER_ATOM_H
-#define LMP_COMPUTE_ORIENTORDER_ATOM_H
+#ifndef LMP_COMPUTE_COARSEORIENTORDER_ATOM_H
+#define LMP_COMPUTE_COARSEORIENTORDER_ATOM_H
 
 #include "compute.h"
 
 namespace LAMMPS_NS {
 
-class ComputeOrientOrderAtom : public Compute {
+class ComputeCoarseOrientOrderAtom : public Compute {
  public:
-  ComputeOrientOrderAtom(class LAMMPS *, int, char **);
-  ~ComputeOrientOrderAtom();
+  ComputeCoarseOrientOrderAtom(class LAMMPS *, int, char **);
+  ~ComputeCoarseOrientOrderAtom();
   virtual void init();
   void init_list(int, class NeighList *);
   virtual void compute_peratom();
+  int pack_forward_comm(int, int *, double *, int, int *);
+  void unpack_forward_comm(int, int, double *);
   double memory_usage();
   double cutsq;
-  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag, aflag;
-  int nnn;
+  int iqlcomp, qlcomp, qlcompflag, wlflag, wlhatflag;
+  int icompute, commflag;
+  int len_qnlist;
+  const static int max_len_qnlist = 350; // 350, approx 2*(2l+1) for l=1, ..., 12
   int *qlist;
   int nqlist;
 
@@ -42,43 +46,46 @@ class ComputeOrientOrderAtom : public Compute {
     int nearest;                    // local ID of neighbor atom
     double distsq;                  // distance between center and neighbor atom
     double rlist[3];                // displacement between center and neighbor atom
+    double qnlist[max_len_qnlist];  // bond orientational order parameters and components
   };
 
  protected:
-  int nmax, maxneigh, ncol, nnn;
+  int nmax,maxneigh,ncol,nnn;
+  int iqlcomp_, jjqlcomp_;
   class NeighList *list;
   double *distsq;
   int *nearest;
   double **rlist;
-  double *alist;
+  double **qnlist;
   int qmax;
   double **qnarray;
   double **qnm_r;
   double **qnm_i;
 
-  void select3(int, int, double *, int *, double **);
-  void calc_boop(double **rlist, double *alist, int numNeighbors,
-                 double qn[], int nlist[], int nnlist);
+  void select3(int, int, double *, int *, double **, double **);
+  void calc_boop(double **rlist, double **qnlist,
+                 int numNeighbors, double qn[], int nlist[], int nnlist);
   double dist(const double r[]);
 
   double polar_prefactor(int, int, double);
   double associated_legendre(int, int, double);
 
+  static const int nmaxfactorial = 167;
+  static const double nfac_table[];
+  double factorial(int);
   virtual void init_clebsch_gordan();
-  double *cglist;    // Clebsch-Gordan coeffs
+  double *cglist;                      // Clebsch-Gordan coeffs
   int idxcg_max;
   int chunksize;
 
-  class ComputeVoronoi *c_voronoi;
-  double **voro_local;
-  // double **voro_atom;
-  char *id_voronoi;
-
+  class ComputeOrientOrderAtom *c_orientorder;
+  char *id_orientorder;
+  double **normv;
   Sort *sort;
   static int compare(const void *, const void *);
 };
 
-}    // namespace LAMMPS_NS
+}
 
 #endif
 #endif
@@ -91,16 +98,16 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Compute orientorder/atom requires a pair style be defined
+E: Compute coarseorientorder/atom requires a pair style be defined
 
 Self-explanatory.
 
-E: Compute orientorder/atom cutoff is longer than pairwise cutoff
+E: Compute coarseorientorder/atom cutoff is longer than pairwise cutoff
 
 Cannot compute order parameter beyond cutoff.
 
-W: More than one compute orientorder/atom
+W: More than one compute coarseorientorder/atom
 
-It is not efficient to use compute orientorder/atom more than once.
+It is not efficient to use compute coarseorientorder/atom more than once.
 
 */
