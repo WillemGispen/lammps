@@ -520,7 +520,7 @@ void ReadData::command(int narg, char **arg)
       } else if (strcmp(keyword,"Velocities") == 0) {
         if (atomflag == 0)
           error->all(FLERR,"Must read Atoms before Velocities");
-        if (firstpass) velocities();
+        if (firstpass) skip_lines(natoms); // velocities();
         else skip_lines(natoms);
 
       } else if (strcmp(keyword,"Bonds") == 0) {
