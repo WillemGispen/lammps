@@ -36,6 +36,8 @@ The coefficient passed via "pair_coeff" controls \eta_p^r,
 #include "neigh_list.h"
 #include "memory.h"
 #include "error.h"
+#include <signal.h>
+
 
 
 using namespace LAMMPS_NS;
@@ -114,6 +116,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
         r = sqrt(rsq);
+        rinv = 1.0/r;
         r3 = rsq * r;
         qp1 = cut[itype][jtype];
         q = qp1 - 1;
