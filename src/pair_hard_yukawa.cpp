@@ -65,6 +65,7 @@ void PairHardYukawa::compute(int eflag, int vflag)
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
+  T = 1.0;
   evdwl = 0.0;
   ev_init(eflag,vflag);
 
@@ -360,6 +361,7 @@ double PairHardYukawa::single(int /*i*/, int /*j*/, int itype, int jtype, double
   double r2inv,r,rinv,screening,forceyukawa,phi;
   double r6inv, r12inv, r24inv, r48inv, b5049;
 
+  T = 1.0;
   r2inv = 1.0/rsq;
   r = sqrt(rsq);
   rinv = 1.0/r;
