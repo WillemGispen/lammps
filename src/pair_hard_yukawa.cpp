@@ -108,6 +108,9 @@ void PairHardYukawa::compute(int eflag, int vflag)
         r = sqrt(rsq);
         rinv = 1.0/r;
         screening = exp(-kappa*(r-1.0));
+        if (kappa > 500) {
+          screening = 0.0;
+        }
         forceyukawa = screening * a[itype][jtype] * (kappa + rinv) * r2inv;
 
         if (r < 50.0/49.0) {
@@ -357,6 +360,9 @@ double PairHardYukawa::single(int /*i*/, int /*j*/, int itype, int jtype, double
   r = sqrt(rsq);
   rinv = 1.0/r;
   screening = exp(-kappa*(r-1.0));
+  if (kappa > 500) {
+    screening = 0.0;
+  }
   forceyukawa = a[itype][jtype] * r2inv * screening * (kappa + rinv);
 
   if (r < 50.0/49.0) {
