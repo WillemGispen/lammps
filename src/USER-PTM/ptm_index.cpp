@@ -230,18 +230,55 @@ int ptm_index(ptm_local_handle_t local_handle, size_t atom_index,
                 num_lpoints = ptm::calculate_neighbour_ordering(
                     local_handle, atom_index, min_points, get_neighbours, nbrlist, false,
                     ordering, points, numbers);
+
+                // TODO: loop here over multiple nearest neighbor definitions, i.e. leaving out some points
+
+
                 if (num_lpoints >= min_points) {
-                        ptm::normalize_vertices(num_lpoints, points, ch_points);
-                        ch.ok = false;
+                  for (int nn=0; nn<5; nn++) {
+                        if (flags & PTM_CHECK_SC) {
+                                int num_points = (&ptm::structure_sc)->num_nbrs + 1;
+                                for (int k=0; k<3; k++){
+                                        double tmp = points[num_points-1][k];
+                                        points[num_points-1][k] = points[num_points-1+nn][k];
+                                        points[num_points-1+nn][k] = tmp;
+                                }
 
-                        if (flags & PTM_CHECK_SC)
+                                ptm::normalize_vertices(num_lpoints, points, ch_points);
+                                ch.ok = false;
+
                                 ret = match_general(&ptm::structure_sc, ch_points, points, &ch, &res);
+                        }
 
-                        if (flags & (PTM_CHECK_FCC | PTM_CHECK_HCP | PTM_CHECK_ICO))
+                        if (flags & (PTM_CHECK_FCC | PTM_CHECK_HCP | PTM_CHECK_ICO)){
+                                int num_points = (&ptm::structure_fcc)->num_nbrs + 1;
+                                for (int k=0; k<3; k++){
+                                        double tmp = points[num_points-1][k];
+                                        points[num_points-1][k] = points[num_points-1+nn][k];
+                                        points[num_points-1+nn][k] = tmp;
+                                }
+
+                                ptm::normalize_vertices(num_lpoints, points, ch_points);
+                                ch.ok = false;
+
+
                                 ret = match_fcc_hcp_ico(ch_points, points, flags, &ch, &res);
+                        }
 
-                        if (flags & PTM_CHECK_BCC)
+                        if (flags & PTM_CHECK_BCC){
+                                int num_points = (&ptm::structure_bcc)->num_nbrs + 1;
+                                for (int k=0; k<3; k++){
+                                        double tmp = points[num_points-1][k];
+                                        points[num_points-1][k] = points[num_points-1+nn][k];
+                                        points[num_points-1+nn][k] = tmp;
+                                }
+
+                                ptm::normalize_vertices(num_lpoints, points, ch_points);
+                                ch.ok = false;
+                                
                                 ret = match_general(&ptm::structure_bcc, ch_points, points, &ch, &res);
+                        }
+                  }
                 }
         }
 

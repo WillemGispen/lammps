@@ -19,6 +19,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include "ptm_polar.h"
 #include "ptm_constants.h"
 
+#include "error.h"
+
 
 namespace ptm {
 
@@ -52,10 +54,26 @@ static double calc_rmsd(int num_points, const double (*ideal_points)[3], double 
 static void check_graphs(        const refdata_t* s,
                                 uint64_t hash,
                                 int8_t* canonical_labelling,
-                                double (*normalized)[3],
+                                double (*points)[3],
                                 result_t* res)
 {
+
+    // try with different neighbor environments
+    for (int nn=0; nn<1; nn++) {
         int num_points = s->num_nbrs + 1;
+
+        // perror (fmt::format("{} ", num_points).c_str());
+
+        // swap final point and next-nearest point
+        for (int k=0; k<3; k++){
+                double tmp = points[num_points-1][k];
+                points[num_points-1][k] = points[num_points-1+nn][k];
+                points[num_points-1+nn][k] = tmp;
+        }
+    
+        double normalized[PTM_MAX_POINTS][3];
+        subtract_barycentre(s->num_nbrs + 1, points, normalized);
+
         const double (*ideal_points)[3] = s->points;
         int8_t inverse_labelling[PTM_MAX_POINTS];
         int8_t mapping[PTM_MAX_POINTS];
@@ -102,6 +120,7 @@ static void check_graphs(        const refdata_t* s,
                         }
                 }
         }
+    }
 }
 
 int match_general(const refdata_t* s, double (*ch_points)[3], double (*points)[3], convexhull_t* ch, result_t* res)
@@ -126,9 +145,6 @@ int match_general(const refdata_t* s, double (*ch_points)[3], double (*points)[3
                         if (degree[i] != 4)
                                 return PTM_NO_ERROR;
 
-        double normalized[PTM_MAX_POINTS][3];
-        subtract_barycentre(s->num_nbrs + 1, points, normalized);
-
         int8_t code[2 * PTM_MAX_EDGES];
         int8_t colours[PTM_MAX_POINTS] = {0};
         int8_t canonical_labelling[PTM_MAX_POINTS];
@@ -137,7 +153,7 @@ int match_general(const refdata_t* s, double (*ch_points)[3], double (*points)[3
         if (ret != PTM_NO_ERROR)
                 return ret;
 
-        check_graphs(s, hash, canonical_labelling, normalized, res);
+        check_graphs(s, hash, canonical_labelling, points, res);
         return PTM_NO_ERROR;
 }
 
@@ -162,9 +178,6 @@ int match_fcc_hcp_ico(double (*ch_points)[3], double (*points)[3], int32_t flags
         if (_max_degree > max_degree)
                 return PTM_NO_ERROR;
 
-        double normalized[PTM_MAX_POINTS][3];
-        subtract_barycentre(num_nbrs + 1, points, normalized);
-
         int8_t code[2 * PTM_MAX_EDGES];
         int8_t colours[PTM_MAX_POINTS] = {0};
         int8_t canonical_labelling[PTM_MAX_POINTS];
@@ -173,9 +186,9 @@ int match_fcc_hcp_ico(double (*ch_points)[3], double (*points)[3], int32_t flags
         if (ret != PTM_NO_ERROR)
                 return ret;
 
-        if (flags & PTM_CHECK_FCC)        check_graphs(&structure_fcc, hash, canonical_labelling, normalized, res);
-        if (flags & PTM_CHECK_HCP)        check_graphs(&structure_hcp, hash, canonical_labelling, normalized, res);
-        if (flags & PTM_CHECK_ICO)        check_graphs(&structure_ico, hash, canonical_labelling, normalized, res);
+        if (flags & PTM_CHECK_FCC)        check_graphs(&structure_fcc, hash, canonical_labelling, points, res);
+        if (flags & PTM_CHECK_HCP)        check_graphs(&structure_hcp, hash, canonical_labelling, points, res);
+        if (flags & PTM_CHECK_ICO)        check_graphs(&structure_ico, hash, canonical_labelling, points, res);
         return PTM_NO_ERROR;
 }
 
