@@ -363,14 +363,17 @@ void ComputeCoordAtom::compute_peratom()
                 // error->warning(FLERR,fmt::format("NN =  {} {} {}",i,j,k),0);
                 double qi = normv[i][k];
                 double qj = normv[j][k];
-                // double qi *= qnfaci; // LD
-                // double qj *= qnfacj; // LD
-                // dot_product += (qj>0)*(qi+qj)*(qi+qj); // LD
-                dot_product += (qj>0)*qi*qj; // Wolde
+                qi *= qnfaci; // LD
+                qj *= qnfacj; // LD
+                dot_product += (qj>0)*(qi+qj)/2.*(qi+qj)/2.; // LD
+                // dot_product += (qj>0)*qi*qj; // Wolde
               }
               k++;
             }
-            count[kk++] = dot_product;
+            // count[kk++] = dot_product; // Wolde
+            double qnormfac = sqrt(MY_4PI/(2*l+1)); // LD
+            count[kk++] = qnormfac * sqrt(dot_product); // LD
+
             if (dot_product > threshold){
               n++;
             }
