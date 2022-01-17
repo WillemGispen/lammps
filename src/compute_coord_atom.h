@@ -55,6 +55,17 @@ class ComputeCoordAtom : public Compute {
   double **normv;
   int cstyle,nqlist,l;
   int *qlist;
+  double **qnm_r;
+  double **qnm_i;
+
+  static const int nmaxfactorial = 167;
+  static const double nfac_table[];
+  double factorial(int);
+  virtual void init_clebsch_gordan();
+  double *cglist;                      // Clebsch-Gordan coeffs
+  int idxcg_max;
+  int chunksize;
+
 };
 
 }
