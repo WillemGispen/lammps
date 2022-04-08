@@ -13,20 +13,20 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(wall/lj126,FixWallLJ126)
+FixStyle(wall/phs,FixWallPHS)
 
 #else
 
-#ifndef LMP_FIX_WALL_LJ126_H
-#define LMP_FIX_WALL_LJ126_H
+#ifndef LMP_FIX_WALL_PHS_H
+#define LMP_FIX_WALL_PHS_H
 
 #include "fix_wall.h"
 
 namespace LAMMPS_NS {
 
-class FixWallLJ126 : public FixWall {
+class FixWallPHS : public FixWall {
  public:
-  FixWallLJ126(class LAMMPS *, int, char **);
+  FixWallPHS(class LAMMPS *, int, char **);
   void precompute(int);
   void wall_particle(int, int, double);
 

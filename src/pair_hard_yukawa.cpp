@@ -106,12 +106,15 @@ void PairHardYukawa::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
         r = sqrt(rsq);
-        rinv = 1.0/r;
-        screening = exp(-kappa*(r-1.0));
+
         if (kappa > 500) {
           screening = 0.0;
+          forceyukawa = 0.0;
+        } else {
+          screening = exp(-kappa*(r-1.0));
+          rinv = 1.0/r;
+          forceyukawa = screening * a[itype][jtype] * (kappa + rinv) * r2inv;
         }
-        forceyukawa = screening * a[itype][jtype] * (kappa + rinv) * r2inv;
 
         if (r < 50.0/49.0) {
           // add continuous hard sphere approx WCA(50,49)
@@ -135,7 +138,12 @@ void PairHardYukawa::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          evdwl = a[itype][jtype] * screening * rinv - offset[itype][jtype];
+          if (kappa > 500) {
+            evdwl = 0.0;
+          }
+          else {
+            evdwl = a[itype][jtype] * screening * rinv - offset[itype][jtype];
+          }
           if (r < 50.0/49.0) {
             // add continuous hard sphere approx WCA(50,49)
             evdwl += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);

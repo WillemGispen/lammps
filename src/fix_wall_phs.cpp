@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "fix_wall_lj126.h"
+#include "fix_wall_phs.h"
 #include <cmath>
 #include "atom.h"
 #include "error.h"
@@ -21,7 +21,7 @@ using namespace FixConst;
 
 /* ---------------------------------------------------------------------- */
 
-FixWallLJ126::FixWallLJ126(LAMMPS *lmp, int narg, char **arg) :
+FixWallPHS::FixWallPHS(LAMMPS *lmp, int narg, char **arg) :
   FixWall(lmp, narg, arg)
 {
   dynamic_group_allow = 1;
@@ -29,7 +29,7 @@ FixWallLJ126::FixWallLJ126(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-void FixWallLJ126::precompute(int m)
+void FixWallPHS::precompute(int m)
 {
   coeff1[m] = 48.0 * epsilon[m] * pow(sigma[m],12.0);
   coeff2[m] = 24.0 * epsilon[m] * pow(sigma[m],6.0);
@@ -48,7 +48,7 @@ void FixWallLJ126::precompute(int m)
    error if any particle is on or behind wall
 ------------------------------------------------------------------------- */
 
-void FixWallLJ126::wall_particle(int m, int which, double coord)
+void FixWallPHS::wall_particle(int m, int which, double coord)
 {
   double delta,rinv,r2inv,r6inv,fwall;
   double r, r12inv, r24inv, r48inv, b5049;
@@ -72,6 +72,7 @@ void FixWallLJ126::wall_particle(int m, int which, double coord)
       if (delta >= cutoff[m]) continue;
       if (delta <= 0.0) {
         onflag = 1;
+        // error->warning(FLERR,fmt::format("{} {} {}",delta, coord, x[i][dim]),0);
         continue;
       }
       rinv = 1.0/delta;
@@ -85,7 +86,7 @@ void FixWallLJ126::wall_particle(int m, int which, double coord)
 
       // fwall = side * r6inv*(coeff1[m]*r6inv - coeff2[m]) * rinv;
       f[i][dim] -= fwall;
-      ewall[0] += 1 + b5049 * r48inv * (r2inv - rinv);
+      ewall[0] += 1.0 + b5049 * r48inv * (r2inv - rinv);
       ewall[m+1] += fwall;
 
       if (evflag) {
@@ -95,5 +96,5 @@ void FixWallLJ126::wall_particle(int m, int which, double coord)
       }
     }
 
-  if (onflag) error->one(FLERR,"Particle on or inside fix wall surface");
+  // if (onflag) error->one(FLERR,"Particle on or inside fix wall surface");
 }

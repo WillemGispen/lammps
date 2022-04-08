@@ -60,7 +60,7 @@ void PairPHS::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r2inv,r,rinv,screening,forcephs,factor;
+  double rsq,r2inv,r,rinv,forcephs,factor;
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -103,10 +103,11 @@ void PairPHS::compute(int eflag, int vflag)
       jtype = type[j];
 
       if (rsq < cutsq[itype][jtype]) {
+        r2inv = 1.0/rsq;
+        r = sqrt(rsq);
+        forcephs = 0.0;
 
         if (r < 50.0/49.0) {
-          r2inv = 1.0/rsq;
-          r = sqrt(rsq);
           r6inv = r2inv*r2inv*r2inv;
           r12inv = r6inv * r6inv;
           r24inv = r12inv * r12inv;
@@ -127,9 +128,9 @@ void PairPHS::compute(int eflag, int vflag)
         }
 
         if (eflag) {
+          evdwl = 0.0;
           if (r < 50.0/49.0) {
-            // add continuous hard sphere approx WCA(50,49)
-            evdwl = 1 + b5049 * r48inv * (r2inv - rinv);
+            evdwl += 1.0 + b5049 * r48inv * (r2inv - rinv);
           }
           evdwl *= factor;
         }
@@ -228,11 +229,7 @@ double PairPHS::init_one(int i, int j)
     cut[i][j] = mix_distance(cut[i][i],cut[j][j]);
   }
 
-  if (offset_flag && (cut[i][j] > 0.0)) {
-    double screening = exp(-kappa * (cut[i][j] - 1.0));
-    offset[i][j] = a[i][j] * screening / cut[i][j];
-  } else offset[i][j] = 0.0;
-
+  offset[i][j] = 0.0;
   a[j][i] = a[i][j];
   offset[j][i] = offset[i][j];
 
@@ -342,14 +339,15 @@ double PairPHS::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
                           double /*factor_coul*/, double factor_lj,
                           double &fforce)
 {
-  double r2inv,r,rinv,screening,forcephs,phi;
+  double r2inv,r,rinv,forcephs,phi;
   double r6inv, r12inv, r24inv, r48inv, b5049;
 
-  r2inv = 1.0/rsq;
-  r = sqrt(rsq);
-  rinv = 1.0/r;
+  forcephs = 0.0;
 
   if (r < 50.0/49.0) {
+    r2inv = 1.0/rsq;
+    r = sqrt(rsq);
+    rinv = 1.0/r;
     r6inv = r2inv*r2inv*r2inv;
     r12inv = r6inv * r6inv;
     r24inv = r12inv * r12inv;
@@ -360,8 +358,9 @@ double PairPHS::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
 
   fforce = factor_lj * forcephs;
 
+  phi = 0.0;
   if (r < 50.0/49.0) {
-    phi = 1 + b5049 * r48inv * (r2inv - rinv);
+    phi = 1.0 + b5049 * r48inv * (r2inv - rinv);
   }
 
   return factor_lj*phi;
