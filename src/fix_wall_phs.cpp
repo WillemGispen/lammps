@@ -75,6 +75,7 @@ void FixWallPHS::wall_particle(int m, int which, double coord)
         // error->warning(FLERR,fmt::format("{} {} {}",delta, coord, x[i][dim]),0);
         continue;
       }
+      delta = delta + 0.5;
       rinv = 1.0/delta;
       r2inv = rinv*rinv;
       r6inv = r2inv*r2inv*r2inv;
