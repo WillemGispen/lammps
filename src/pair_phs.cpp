@@ -12,15 +12,14 @@
 ------------------------------------------------------------------------- */
 
 /*
-Hard-core repulsive Yukawa potential
+Pseudo-hard-core potential
+u(r) = WCA-49-50(r)
 
-u(r) = A / r * exp(- k (r - 1))    , r > 1
-u(r) = WCA-49-50(r)                , r < 1
-
-Assumed: particles have diameter 1
+Assumed: particles have diameter 1.
+Reduced temperature must be set to 1.5.
 */
 
-#include "pair_hard_yukawa.h"
+#include "pair_phs.h"
 
 #include <cmath>
 #include "atom.h"
@@ -35,14 +34,14 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-PairHardYukawa::PairHardYukawa(LAMMPS *lmp) : Pair(lmp)
+PairPHS::PairPHS(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
 }
 
 /* ---------------------------------------------------------------------- */
 
-PairHardYukawa::~PairHardYukawa()
+PairPHS::~PairPHS()
 {
   if (allocated) {
     memory->destroy(setflag);
@@ -57,11 +56,11 @@ PairHardYukawa::~PairHardYukawa()
 
 /* ---------------------------------------------------------------------- */
 
-void PairHardYukawa::compute(int eflag, int vflag)
+void PairPHS::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
-  double rsq,r2inv,r,rinv,screening,forceyukawa,factor;
+  double rsq,r2inv,r,rinv,forcephs,factor;
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -106,27 +105,18 @@ void PairHardYukawa::compute(int eflag, int vflag)
       if (rsq < cutsq[itype][jtype]) {
         r2inv = 1.0/rsq;
         r = sqrt(rsq);
-
-        if (kappa > 500) {
-          screening = 0.0;
-          forceyukawa = 0.0;
-        } else {
-          screening = exp(-kappa*(r-1.0));
-          rinv = 1.0/r;
-          forceyukawa = screening * a[itype][jtype] * (kappa + rinv) * r2inv;
-        }
+        forcephs = 0.0;
 
         if (r < 50.0/49.0) {
-          // add continuous hard sphere approx WCA(50,49)
           r6inv = r2inv*r2inv*r2inv;
           r12inv = r6inv * r6inv;
           r24inv = r12inv * r12inv;
           r48inv = r24inv * r24inv;
           b5049 = 134.55266;
-          forceyukawa += T * 2.0 / 3.0 * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
+          forcephs += b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
         }
 
-        fpair = factor * forceyukawa;
+        fpair = factor * forcephs;
 
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
@@ -138,16 +128,9 @@ void PairHardYukawa::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          if (kappa > 500) {
-            evdwl = 0.0;
-          }
-          else {
-            evdwl = a[itype][jtype] * screening * rinv - offset[itype][jtype];
-          }
+          evdwl = 0.0;
           if (r < 50.0/49.0) {
-            // add continuous hard sphere approx WCA(50,49)
-            evdwl += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
-            evdwl += T * 2.0 / 3.0;
+            evdwl += 1.0 + b5049 * r48inv * (r2inv - rinv);
           }
           evdwl *= factor;
         }
@@ -165,7 +148,7 @@ void PairHardYukawa::compute(int eflag, int vflag)
    allocate all arrays
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::allocate()
+void PairPHS::allocate()
 {
   allocated = 1;
   int n = atom->ntypes;
@@ -186,7 +169,7 @@ void PairHardYukawa::allocate()
    global settings
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::settings(int narg, char **arg)
+void PairPHS::settings(int narg, char **arg)
 {
   if (narg != 2) error->all(FLERR,"Illegal pair_style command");
 
@@ -207,7 +190,7 @@ void PairHardYukawa::settings(int narg, char **arg)
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::coeff(int narg, char **arg)
+void PairPHS::coeff(int narg, char **arg)
 {
   if (narg < 3 || narg > 4)
     error->all(FLERR,"Incorrect args for pair coefficients");
@@ -239,18 +222,14 @@ void PairHardYukawa::coeff(int narg, char **arg)
    init for one type pair i,j and corresponding j,i
 ------------------------------------------------------------------------- */
 
-double PairHardYukawa::init_one(int i, int j)
+double PairPHS::init_one(int i, int j)
 {
   if (setflag[i][j] == 0) {
     a[i][j] = mix_energy(a[i][i],a[j][j],1.0,1.0);
     cut[i][j] = mix_distance(cut[i][i],cut[j][j]);
   }
 
-  if (offset_flag && (cut[i][j] > 0.0)) {
-    double screening = exp(-kappa * (cut[i][j] - 1.0));
-    offset[i][j] = a[i][j] * screening / cut[i][j];
-  } else offset[i][j] = 0.0;
-
+  offset[i][j] = 0.0;
   a[j][i] = a[i][j];
   offset[j][i] = offset[i][j];
 
@@ -261,7 +240,7 @@ double PairHardYukawa::init_one(int i, int j)
    proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::write_restart(FILE *fp)
+void PairPHS::write_restart(FILE *fp)
 {
   write_restart_settings(fp);
 
@@ -280,7 +259,7 @@ void PairHardYukawa::write_restart(FILE *fp)
    proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::read_restart(FILE *fp)
+void PairPHS::read_restart(FILE *fp)
 {
   read_restart_settings(fp);
 
@@ -307,7 +286,7 @@ void PairHardYukawa::read_restart(FILE *fp)
    proc 0 writes to restart file
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::write_restart_settings(FILE *fp)
+void PairPHS::write_restart_settings(FILE *fp)
 {
   fwrite(&kappa,sizeof(double),1,fp);
   fwrite(&cut_global,sizeof(double),1,fp);
@@ -319,7 +298,7 @@ void PairHardYukawa::write_restart_settings(FILE *fp)
    proc 0 reads from restart file, bcasts
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::read_restart_settings(FILE *fp)
+void PairPHS::read_restart_settings(FILE *fp)
 {
   if (comm->me == 0) {
     utils::sfread(FLERR,&kappa,sizeof(double),1,fp,nullptr,error);
@@ -337,7 +316,7 @@ void PairHardYukawa::read_restart_settings(FILE *fp)
    proc 0 writes to data file
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::write_data(FILE *fp)
+void PairPHS::write_data(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
     fprintf(fp,"%d %g\n",i,a[i][i]);
@@ -347,7 +326,7 @@ void PairHardYukawa::write_data(FILE *fp)
    proc 0 writes all pairs to data file
 ------------------------------------------------------------------------- */
 
-void PairHardYukawa::write_data_all(FILE *fp)
+void PairPHS::write_data_all(FILE *fp)
 {
   for (int i = 1; i <= atom->ntypes; i++)
     for (int j = i; j <= atom->ntypes; j++)
@@ -356,41 +335,32 @@ void PairHardYukawa::write_data_all(FILE *fp)
 
 /* ---------------------------------------------------------------------- */
 
-double PairHardYukawa::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
+double PairPHS::single(int /*i*/, int /*j*/, int itype, int jtype, double rsq,
                           double /*factor_coul*/, double factor_lj,
                           double &fforce)
 {
-  double r2inv,r,rinv,screening,forceyukawa,phi;
+  double r2inv,r,rinv,forcephs,phi;
   double r6inv, r12inv, r24inv, r48inv, b5049;
 
-  T = 1.0;
-  r2inv = 1.0/rsq;
-  r = sqrt(rsq);
-  rinv = 1.0/r;
-  screening = exp(-kappa*(r-1.0));
-  if (kappa > 500) {
-    screening = 0.0;
-  }
-  forceyukawa = a[itype][jtype] * r2inv * screening * (kappa + rinv);
+  forcephs = 0.0;
 
   if (r < 50.0/49.0) {
-    // add continuous hard sphere approx WCA(50,49)
+    r2inv = 1.0/rsq;
+    r = sqrt(rsq);
+    rinv = 1.0/r;
     r6inv = r2inv*r2inv*r2inv;
     r12inv = r6inv * r6inv;
     r24inv = r12inv * r12inv;
     r48inv = r24inv * r24inv;
     b5049 = 134.55266;
-    forceyukawa += T * 2.0 / 3.0 * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
+    forcephs = b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * r);
   }
 
-  fforce = factor_lj * forceyukawa;
+  fforce = factor_lj * forcephs;
 
-  phi = a[itype][jtype] * screening * rinv - offset[itype][jtype];
-
+  phi = 0.0;
   if (r < 50.0/49.0) {
-    // add continuous hard sphere approx WCA(50,49)
-    phi += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
-    phi += T * 2.0 / 3.0;
+    phi = 1.0 + b5049 * r48inv * (r2inv - rinv);
   }
 
   return factor_lj*phi;
