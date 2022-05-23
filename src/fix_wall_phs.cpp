@@ -75,20 +75,34 @@ void FixWallPHS::wall_particle(int m, int which, double coord)
         // error->warning(FLERR,fmt::format("{} {} {}",delta, coord, x[i][dim]),0);
         continue;
       }
-      delta = delta + 0.5;
-      rinv = 1.0/delta;
-      r2inv = rinv*rinv;
-      r6inv = r2inv*r2inv*r2inv;
-      r12inv = r6inv * r6inv;
-      r24inv = r12inv * r12inv;
-      r48inv = r24inv * r24inv;
-      b5049 = 134.55266;
-      fwall = side * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * delta);
 
-      // fwall = side * r6inv*(coeff1[m]*r6inv - coeff2[m]) * rinv;
-      f[i][dim] -= fwall;
-      ewall[0] += 1.0 + b5049 * r48inv * (r2inv - rinv);
-      ewall[m+1] += fwall;
+      if (cutoff[m] < 1.0205) {
+        delta = delta + 0.5;
+        rinv = 1.0/delta;
+        r2inv = rinv*rinv;
+        r6inv = r2inv*r2inv*r2inv;
+        r12inv = r6inv * r6inv;
+        r24inv = r12inv * r12inv;
+        r48inv = r24inv * r24inv;
+        b5049 = 134.55266;
+        fwall = side * b5049 * r48inv * r2inv * r2inv * (50.0 - 49.0 * delta);
+
+        // fwall = side * r6inv*(coeff1[m]*r6inv - coeff2[m]) * rinv;
+        f[i][dim] -= fwall;
+        ewall[0] += 1.0 + b5049 * r48inv * (r2inv - rinv);
+        ewall[m+1] += fwall;
+      } else {
+        delta = delta + 0.5;
+        rinv = 1.0/delta;
+        r2inv = rinv*rinv;
+        r6inv = r2inv*r2inv*r2inv;
+
+        fwall = side * r6inv*(coeff1[m]*r6inv - coeff2[m]) * rinv;
+        f[i][dim] -= fwall;
+        ewall[0] += r6inv*(coeff3[m]*r6inv - coeff4[m]) - offset[m];
+        ewall[m+1] += fwall;
+      }
+
 
       if (evflag) {
         if (side < 0) vn = -fwall*delta;
