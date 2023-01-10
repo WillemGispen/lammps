@@ -64,7 +64,6 @@ void PairPHS::compute(int eflag, int vflag)
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
-  T = 1.0;
   evdwl = 0.0;
   ev_init(eflag,vflag);
 
@@ -102,7 +101,7 @@ void PairPHS::compute(int eflag, int vflag)
       rsq = delx*delx + dely*dely + delz*delz;
       jtype = type[j];
 
-      if (rsq < cutsq[itype][jtype]) {
+      if (rsq < 1.041233) {
         r2inv = 1.0/rsq;
         r = sqrt(rsq);
         forcephs = 0.0;

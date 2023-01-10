@@ -25,6 +25,8 @@ A3 = \frac{1}{2*(1 + q)^3}
 Assumed: colloidal particles have diameter \sigma=1.
 The coefficient passed via "pair_coeff" controls \eta_p^r,
  i.e. the packing fraction of the ideal polymer reservoir.
+
+It also computes the derivative dU / d\eta_p^r, which is available via compute/pair.
 */
 
 #include "pair_asakura_oosawa.h"
@@ -46,6 +48,8 @@ using namespace LAMMPS_NS;
 
 PairAsakuraOosawa::PairAsakuraOosawa(LAMMPS *lmp) : Pair(lmp)
 {
+  // nextra = 1;
+  // pvector = new double[1];
   writedata = 1;
 }
 
@@ -53,6 +57,8 @@ PairAsakuraOosawa::PairAsakuraOosawa(LAMMPS *lmp) : Pair(lmp)
 
 PairAsakuraOosawa::~PairAsakuraOosawa()
 {
+  delete [] pvector;
+
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
@@ -72,6 +78,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
   double xtmp,ytmp,ztmp,delx,dely,delz,evdwl,fpair;
   double rsq,r2inv,r,r3,rinv,screening,forceao,factor;
   double qp1, q, fac0, fac1, fac3;
+  double fduds, duds;
   double r6inv, r12inv, r24inv, r48inv, b5049;
   int *ilist,*jlist,*numneigh,**firstneigh;
 
@@ -119,10 +126,10 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
         rinv = 1.0/r;
         r3 = rsq * r;
         qp1 = cut[itype][jtype];
-        q = qp1 - 1;
+        q = qp1 - 1.0;
         fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
-        fac1 = -3 / (2 * qp1);
-        fac3 = 1 / (2 * qp1 * qp1 * qp1);
+        fac1 = -3.0 / (2.0 * qp1);
+        fac3 = 1.0 / (2.0 * qp1 * qp1 * qp1);
         forceao = T * fac0 * (fac1 + 3 * fac3 * rsq);
 
         if (r < 50.0/49.0) {
@@ -147,7 +154,13 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
         }
 
         if (eflag) {
-          evdwl = - T * fac0 * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
+          evdwl = - T * fac0 * (1.0 + fac1 * r + fac3 * r3) - offset[itype][jtype];
+
+          if (eflag_global) {
+            fduds = qp1 * qp1 * qp1 / (q * q * q);
+            duds += - T * fduds * (1.0 + fac1 * r + fac3 * r3);
+          }
+
           if (r < 50.0/49.0) {
             // add continuous hard sphere approx WCA(50,49)
             evdwl += T * 2.0 / 3.0 * b5049 * r48inv * (r2inv - rinv);
@@ -162,6 +175,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
     }
   }
 
+  // if (eflag_global) pvector[0] = duds;
   if (vflag_fdotr) virial_fdotr_compute();
 }
 
@@ -371,11 +385,11 @@ double PairAsakuraOosawa::single(int /*i*/, int /*j*/, int itype, int jtype, dou
   r3 = rsq * r;
   rinv = 1.0/r;
   qp1 = cut[itype][jtype];
-  q = qp1 - 1;
+  q = qp1 - 1.0;
   fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
-  fac1 = -3 / (2 * qp1);
-  fac3 = 1 / (2 * qp1 * qp1 * qp1);
-  forceao = T * fac0 * (fac1 + 3 * fac3 * rsq);
+  fac1 = -3.0 / (2.0 * qp1);
+  fac3 = 1.0 / (2.0 * qp1 * qp1 * qp1);
+  forceao = T * fac0 * (fac1 + 3.0 * fac3 * rsq);
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
@@ -389,7 +403,7 @@ double PairAsakuraOosawa::single(int /*i*/, int /*j*/, int itype, int jtype, dou
 
   fforce = factor_lj * forceao;
 
-  phi = - T * fac0 * (1 + fac1 * r + fac3 * r3) - offset[itype][jtype];
+  phi = - T * fac0 * (1.0 + fac1 * r + fac3 * r3) - offset[itype][jtype];
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
