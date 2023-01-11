@@ -39,7 +39,7 @@ class ComputeVoronoi : public Compute {
   void compute_vector() override;
   void compute_local() override;
   double memory_usage() override;
-  int faces_flag;
+
   int pack_forward_comm(int, int *, double *, int, int *) override;
   void unpack_forward_comm(int, int, double *) override;
 
@@ -62,7 +62,7 @@ class ComputeVoronoi : public Compute {
 
   tagint *tags, oldmaxtag;
   int *occvec, *sendocc, *lroot, *lnext, lmax, oldnatoms, oldnall;
-  int nfaces, nfacesmax;
+  int faces_flag, nfaces, nfacesmax;
   double **faces;
 };
 
