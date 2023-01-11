@@ -130,7 +130,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
         fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
         fac1 = -3.0 / (2.0 * qp1);
         fac3 = 1.0 / (2.0 * qp1 * qp1 * qp1);
-        forceao = T * fac0 * (fac1 + 3 * fac3 * rsq);
+        forceao = T * fac0 * (fac1*rinv + 3.0*fac3*r);
 
         if (r < 50.0/49.0) {
           // add continuous hard sphere approx WCA(50,49)
@@ -143,7 +143,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
         }
 
         fpair = factor * forceao;
-
+        
         f[i][0] += delx*fpair;
         f[i][1] += dely*fpair;
         f[i][2] += delz*fpair;
@@ -158,7 +158,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
 
           if (eflag_global) {
             fduds = qp1 * qp1 * qp1 / (q * q * q);
-            duds += - T * fduds * (1.0 + fac1 * r + fac3 * r3);
+            duds += - T * fduds * (1.0 + fac1*r + fac3*r3);
           }
 
           if (r < 50.0/49.0) {
@@ -389,7 +389,7 @@ double PairAsakuraOosawa::single(int /*i*/, int /*j*/, int itype, int jtype, dou
   fac0 = a[itype][jtype] * qp1 * qp1 * qp1 / (q * q * q);
   fac1 = -3.0 / (2.0 * qp1);
   fac3 = 1.0 / (2.0 * qp1 * qp1 * qp1);
-  forceao = T * fac0 * (fac1 + 3.0 * fac3 * rsq);
+  forceao = T * fac0 * (fac1*rinv + 3.0*fac3*r);
 
   if (r < 50.0/49.0) {
     // add continuous hard sphere approx WCA(50,49)
