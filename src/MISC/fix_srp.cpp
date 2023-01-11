@@ -57,7 +57,7 @@ FixSRP::FixSRP(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg)
   // initial allocation of atom-based array
   // register with Atom class
   array = nullptr;
-  grow_arrays(atom->nmax);
+  FixSRP::grow_arrays(atom->nmax);
 
   // extends pack_exchange()
   atom->add_callback(Atom::GROW);
@@ -607,7 +607,7 @@ void FixSRP::write_restart(FILE *fp)
 void FixSRP::restart(char *buf)
 {
   int n = 0;
-  double *list = (double *) buf;
+  auto list = (double *) buf;
 
   comm->cutghostuser = static_cast<double> (list[n++]);
   btype = static_cast<int> (list[n++]);

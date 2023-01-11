@@ -28,12 +28,11 @@
 #include "random_mars.h"
 #include "respa.h"
 #include "potential_file_reader.h"
-#include "tokenizer.h"
 #include "update.h"
-#include "fmt/chrono.h"
 
 #include <cmath>
 #include <cstring>
+#include <exception>
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -78,7 +77,7 @@ FixTTM::FixTTM(LAMMPS *lmp, int narg, char **arg) :
   nzgrid = utils::inumeric(FLERR,arg[12],false,lmp);
 
   tinit = 0.0;
-  infile = outfile = NULL;
+  infile = outfile = nullptr;
 
   int iarg = 13;
   while (iarg < narg) {
@@ -142,7 +141,7 @@ FixTTM::FixTTM(LAMMPS *lmp, int narg, char **arg) :
   // allocate per-atom flangevin and zero it
 
   flangevin = nullptr;
-  grow_arrays(atom->nmax);
+  FixTTM::grow_arrays(atom->nmax);
 
   for (int i = 0; i < atom->nmax; i++) {
     flangevin[i][0] = 0.0;
@@ -173,7 +172,7 @@ FixTTM::~FixTTM()
 
   memory->destroy(flangevin);
 
-  if (!deallocate_flag) deallocate_grid();
+  if (!deallocate_flag) FixTTM::deallocate_grid();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -242,7 +241,7 @@ void FixTTM::init()
   }
 
   if (utils::strmatch(update->integrate_style,"^respa"))
-    nlevels_respa = ((Respa *) update->integrate)->nlevels;
+    nlevels_respa = (dynamic_cast<Respa *>( update->integrate))->nlevels;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -252,9 +251,9 @@ void FixTTM::setup(int vflag)
   if (utils::strmatch(update->integrate_style,"^verlet")) {
     post_force_setup(vflag);
   } else {
-    ((Respa *) update->integrate)->copy_flevel_f(nlevels_respa-1);
+    (dynamic_cast<Respa *>( update->integrate))->copy_flevel_f(nlevels_respa-1);
     post_force_respa_setup(vflag,nlevels_respa-1,0);
-    ((Respa *) update->integrate)->copy_f_flevel(nlevels_respa-1);
+    (dynamic_cast<Respa *>( update->integrate))->copy_f_flevel(nlevels_respa-1);
   }
 }
 
@@ -492,10 +491,10 @@ void FixTTM::read_electron_temperatures(const std::string &filename)
         // check correctness of input data
 
         if ((ix < 0) || (ix >= nxgrid) || (iy < 0) || (iy >= nygrid) || (iz < 0) || (iz >= nzgrid))
-          throw parser_error("Fix ttm invalid grid index in fix ttm grid file");
+          throw TokenizerException("Fix ttm invalid grid index in fix ttm grid file","");
 
         if (T_tmp < 0.0)
-          throw parser_error("Fix ttm electron temperatures must be > 0.0");
+          throw TokenizerException("Fix ttm electron temperatures must be > 0.0","");
 
         T_electron[iz][iy][ix] = T_tmp;
         T_initial_set[iz][iy][ix] = 1;
@@ -527,14 +526,11 @@ void FixTTM::write_electron_temperatures(const std::string &filename)
 {
   if (comm->me) return;
 
-  time_t tv = time(nullptr);
-  std::tm current_date = fmt::localtime(tv);
-
   FILE *fp = fopen(filename.c_str(),"w");
   if (!fp) error->one(FLERR,"Fix ttm could not open output file {}: {}",
                       filename,utils::getsyserror());
-  fmt::print(fp,"# DATE: {:%Y-%m-%d} UNITS: {} COMMENT: Electron temperature "
-             "{}x{}x{} grid at step {}. Created by fix {}\n", current_date,
+  fmt::print(fp,"# DATE: {} UNITS: {} COMMENT: Electron temperature "
+             "{}x{}x{} grid at step {}. Created by fix {}\n", utils::current_date(),
              update->unit_style, nxgrid, nygrid, nzgrid, update->ntimestep, style);
 
   int ix,iy,iz;
@@ -601,7 +597,7 @@ void FixTTM::write_restart(FILE *fp)
 void FixTTM::restart(char *buf)
 {
   int n = 0;
-  double *rlist = (double *) buf;
+  auto rlist = (double *) buf;
 
   // check that restart grid size is same as current grid size
 

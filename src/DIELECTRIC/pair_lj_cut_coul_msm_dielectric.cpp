@@ -19,27 +19,25 @@
 
 #include "atom.h"
 #include "atom_vec_dielectric.h"
-#include "comm.h"
 #include "error.h"
 #include "force.h"
-#include "integrate.h"
 #include "kspace.h"
 #include "math_const.h"
 #include "memory.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
 
 #include <cmath>
+#include <cstring>
 
 using namespace LAMMPS_NS;
-using namespace MathConst;
+using MathConst::MY_PIS;
 
-#define EPSILON 1e-6
+static constexpr double EPSILON = 1.0e-6;
 
 /* ---------------------------------------------------------------------- */
 
-PairLJCutCoulMSMDielectric::PairLJCutCoulMSMDielectric(LAMMPS *lmp) : PairLJCutCoulLong(lmp)
+PairLJCutCoulMSMDielectric::PairLJCutCoulMSMDielectric(LAMMPS *_lmp) : PairLJCutCoulLong(_lmp)
 {
   ewaldflag = pppmflag = 0;
   msmflag = 1;
@@ -49,6 +47,7 @@ PairLJCutCoulMSMDielectric::PairLJCutCoulMSMDielectric(LAMMPS *lmp) : PairLJCutC
   nmax = 0;
   ftmp = nullptr;
   efield = nullptr;
+  no_virial_fdotr_compute = 1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -65,7 +64,7 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
 {
   int i, ii, j, jj, inum, jnum, itype, jtype, itable;
   double qtmp, etmp, xtmp, ytmp, ztmp, delx, dely, delz, evdwl, ecoul, fpair;
-  double fpair_i, fpair_j;
+  double fpair_i;
   double fraction, table;
   double r, r2inv, r6inv, forcecoul, forcelj, factor_coul, factor_lj;
   double egamma, fgamma, prefactor, prefactorE, efield_i;
@@ -108,10 +107,8 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
   double *curvature = atom->curvature;
   double *area = atom->area;
   int *type = atom->type;
-  int nlocal = atom->nlocal;
   double *special_coul = force->special_coul;
   double *special_lj = force->special_lj;
-  int newton_pair = force->newton_pair;
   double qqrd2e = force->qqrd2e;
 
   inum = list->inum;
@@ -167,7 +164,7 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
             forcecoul = prefactor * fgamma;
             if (factor_coul < 1.0) forcecoul -= (1.0 - factor_coul) * prefactor;
 
-            prefactorE = q[j] / r;
+            prefactorE = qqrd2e * q[j] / r;
             efield_i = prefactorE * fgamma;
             if (factor_coul < 1.0) efield_i -= (1.0 - factor_coul) * prefactorE;
 
@@ -179,13 +176,13 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
             fraction = (rsq_lookup.f - rtable[itable]) * drtable[itable];
             table = ftable[itable] + fraction * dftable[itable];
             forcecoul = qtmp * q[j] * table;
-            efield_i = q[j] * table / qqrd2e;
+            efield_i = q[j] * table;
             if (factor_coul < 1.0) {
               table = ctable[itable] + fraction * dctable[itable];
               prefactor = qtmp * q[j] * table;
               forcecoul -= (1.0 - factor_coul) * prefactor;
 
-              prefactorE = q[j] * table / qqrd2e;
+              prefactorE = q[j] * table;
               efield_i -= (1.0 - factor_coul) * prefactorE;
             }
           }
@@ -210,12 +207,6 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
           efield[i][1] += dely * efield_i;
           efield[i][2] += delz * efield_i;
 
-          if (newton_pair && j >= nlocal) {
-            fpair_j = (forcecoul * eps[j] + factor_lj * forcelj) * r2inv;
-            f[j][0] -= delx * fpair_j;
-            f[j][1] -= dely * fpair_j;
-            f[j][2] -= delz * fpair_j;
-          }
         } else {
 
           // separate LJ and Coulombic forces
@@ -225,11 +216,6 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
           f[i][0] += delx * fpair;
           f[i][1] += dely * fpair;
           f[i][2] += delz * fpair;
-          if (newton_pair) {
-            f[j][0] -= delx * fpair;
-            f[j][1] -= dely * fpair;
-            f[j][2] -= delz * fpair;
-          }
 
           fpair_i = (forcecoul * etmp) * r2inv;
           ftmp[i][0] += delx * fpair_i;
@@ -240,22 +226,15 @@ void PairLJCutCoulMSMDielectric::compute(int eflag, int vflag)
           efield[i][0] += delx * efield_i;
           efield[i][1] += dely * efield_i;
           efield[i][2] += delz * efield_i;
-
-          if (newton_pair && j >= nlocal) {
-            fpair_j = (forcecoul * eps[j]) * r2inv;
-            ftmp[j][0] -= delx * fpair_j;
-            ftmp[j][1] -= dely * fpair_j;
-            ftmp[j][2] -= delz * fpair_j;
-          }
         }
 
         if (eflag) {
           if (rsq < cut_coulsq) {
             if (!ncoultablebits || rsq <= tabinnersq)
-              ecoul = prefactor * (etmp + eps[j]) * egamma;
+              ecoul = prefactor * 0.5 * (etmp + eps[j]) * egamma;
             else {
               table = etable[itable] + fraction * detable[itable];
-              ecoul = qtmp * q[j] * (etmp + eps[j]) * table;
+              ecoul = qtmp * q[j] * 0.5 * (etmp + eps[j]) * table;
             }
             if (factor_coul < 1.0) ecoul -= (1.0 - factor_coul) * prefactor;
           } else
@@ -354,18 +333,16 @@ double PairLJCutCoulMSMDielectric::single(int i, int j, int itype, int jtype, do
 
 void PairLJCutCoulMSMDielectric::init_style()
 {
-  avec = (AtomVecDielectric *) atom->style_match("dielectric");
+  avec = dynamic_cast<AtomVecDielectric *>(atom->style_match("dielectric"));
   if (!avec) error->all(FLERR, "Pair lj/cut/coul/msm/dielectric requires atom style dielectric");
 
-  int irequest = neighbor->request(this, instance_me);
-  neighbor->requests[irequest]->half = 0;
-  neighbor->requests[irequest]->full = 1;
+  neighbor->add_request(this, NeighConst::REQ_FULL);
 
   cut_coulsq = cut_coul * cut_coul;
 
   // insure use of KSpace long-range solver, set g_ewald
 
-  if (force->kspace == NULL) error->all(FLERR, "Pair style requires a KSpace style");
+  if (force->kspace == nullptr) error->all(FLERR, "Pair style requires a KSpace style");
   g_ewald = force->kspace->g_ewald;
 
   // setup force tables
@@ -382,5 +359,5 @@ void *PairLJCutCoulMSMDielectric::extract(const char *str, int &dim)
   dim = 2;
   if (strcmp(str, "epsilon") == 0) return (void *) epsilon;
   if (strcmp(str, "sigma") == 0) return (void *) sigma;
-  return NULL;
+  return nullptr;
 }

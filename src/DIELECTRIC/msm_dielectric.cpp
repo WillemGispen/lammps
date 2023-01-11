@@ -23,15 +23,9 @@
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
-#include "force.h"
 #include "gridcomm.h"
 #include "math_const.h"
 #include "memory.h"
-#include "neighbor.h"
-#include "pair.h"
-
-#include <cstring>
-#include <cmath>
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
@@ -40,7 +34,7 @@ enum{REVERSE_RHO,REVERSE_AD,REVERSE_AD_PERATOM};
 enum{FORWARD_RHO,FORWARD_AD,FORWARD_AD_PERATOM};
 /* ---------------------------------------------------------------------- */
 
-MSMDielectric::MSMDielectric(LAMMPS *lmp) : MSM(lmp)
+MSMDielectric::MSMDielectric(LAMMPS *_lmp) : MSM(_lmp)
 {
   efield = nullptr;
   phi = nullptr;
@@ -64,7 +58,7 @@ void MSMDielectric::init()
 {
   MSM::init();
 
-  avec = (AtomVecDielectric *) atom->style_match("dielectric");
+  avec = dynamic_cast<AtomVecDielectric *>( atom->style_match("dielectric"));
   if (!avec) error->all(FLERR,"msm/dielectric requires atom style dielectric");
 }
 

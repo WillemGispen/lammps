@@ -82,7 +82,7 @@ vstore(nullptr), astore(nullptr), rbuf(nullptr)
     memory->create(rbuf,nrow*ncol+2,"fix/store:rbuf");
   }
   if (flavor == PERATOM) {
-    grow_arrays(atom->nmax);
+    FixStore::grow_arrays(atom->nmax);
     atom->add_callback(Atom::GROW);
     if (restart_peratom) atom->add_callback(Atom::RESTART);
     rbuf = nullptr;
@@ -187,7 +187,7 @@ void FixStore::restart(char *buf)
 {
   // first 2 values in buf are vec/array sizes
 
-  double *dbuf = (double *) buf;
+  auto dbuf = (double *) buf;
   int nrow_restart = dbuf[0];
   int ncol_restart = dbuf[1];
 

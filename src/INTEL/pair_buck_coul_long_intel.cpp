@@ -22,8 +22,6 @@
 #include "comm.h"
 #include "error.h"
 #include "force.h"
-#include "force.h"
-#include "group.h"
 #include "kspace.h"
 #include "math_const.h"
 #include "memory.h"
@@ -47,10 +45,6 @@ PairBuckCoulLongIntel::PairBuckCoulLongIntel(LAMMPS *lmp) :
   PairBuckCoulLong(lmp)
 {
   suffix_flag |= Suffix::INTEL;
-}
-
-PairBuckCoulLongIntel::~PairBuckCoulLongIntel()
-{
 }
 
 void PairBuckCoulLongIntel::compute(int eflag, int vflag)
@@ -148,7 +142,7 @@ void PairBuckCoulLongIntel::eval(const int offload, const int vflag,
 
   const int * _noalias const ilist = list->ilist;
   const int * _noalias const numneigh = list->numneigh;
-  const int ** _noalias const firstneigh = (const int **)list->firstneigh;
+  const int ** _noalias const firstneigh = (const int **)list->firstneigh;  // NOLINT
 
   const flt_t * _noalias const special_coul = fc.special_coul;
   const flt_t * _noalias const special_lj = fc.special_lj;
@@ -479,7 +473,7 @@ void PairBuckCoulLongIntel::eval(const int offload, const int vflag,
   if (EFLAG || vflag)
     fix->add_result_array(f_start, ev_global, offload, eatom, 0, vflag);
   else
-    fix->add_result_array(f_start, 0, offload);
+    fix->add_result_array(f_start, nullptr, offload);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -487,19 +481,11 @@ void PairBuckCoulLongIntel::eval(const int offload, const int vflag,
 void PairBuckCoulLongIntel::init_style()
 {
   PairBuckCoulLong::init_style();
-  auto request = neighbor->find_request(this);
+  if (force->newton_pair == 0)
+    neighbor->find_request(this)->enable_full();
 
-  if (force->newton_pair == 0) {
-    request->half = 0;
-    request->full = 1;
-  }
-  request->intel = 1;
-
-  int ifix = modify->find_fix("package_intel");
-  if (ifix < 0)
-    error->all(FLERR,
-               "The 'package intel' command is required for /intel styles");
-  fix = static_cast<FixIntel *>(modify->fix[ifix]);
+  fix = static_cast<FixIntel *>(modify->get_fix_by_id("package_intel"));
+  if (!fix) error->all(FLERR, "The 'package intel' command is required for /intel styles");
 
   fix->pair_init_check();
   #ifdef _LMP_INTEL_OFFLOAD

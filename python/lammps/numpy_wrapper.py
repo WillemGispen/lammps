@@ -92,8 +92,12 @@ class numpy_wrapper:
     if dim == LAMMPS_AUTODETECT:
       if dtype in (LAMMPS_INT_2D, LAMMPS_DOUBLE_2D, LAMMPS_INT64_2D):
         # TODO add other fields
-        if name in ("x", "v", "f", "angmom", "torque", "csforce", "vforce"):
+        if name in ("x", "v", "f", "x0","omega", "angmom", "torque", "csforce", "vforce", "vest"):
           dim = 3
+        elif name == "smd_data_9":
+          dim = 9
+        elif name == "smd_stress":
+          dim = 6
         else:
           dim = 2
       else:
@@ -161,13 +165,20 @@ class numpy_wrapper:
     """
     value = self.lmp.extract_compute(cid, cstyle, ctype)
 
-    if cstyle in (LMP_STYLE_GLOBAL, LMP_STYLE_LOCAL):
+    if cstyle == LMP_STYLE_GLOBAL:
       if ctype == LMP_TYPE_VECTOR:
         nrows = self.lmp.extract_compute(cid, cstyle, LMP_SIZE_VECTOR)
         return self.darray(value, nrows)
       elif ctype == LMP_TYPE_ARRAY:
         nrows = self.lmp.extract_compute(cid, cstyle, LMP_SIZE_ROWS)
         ncols = self.lmp.extract_compute(cid, cstyle, LMP_SIZE_COLS)
+        return self.darray(value, nrows, ncols)
+    elif cstyle == LMP_STYLE_LOCAL:
+      nrows = self.lmp.extract_compute(cid, cstyle, LMP_SIZE_ROWS)
+      ncols = self.lmp.extract_compute(cid, cstyle, LMP_SIZE_COLS)
+      if ncols == 0:
+        return self.darray(value, nrows)
+      else:
         return self.darray(value, nrows, ncols)
     elif cstyle == LMP_STYLE_ATOM:
       if ctype == LMP_TYPE_VECTOR:
@@ -386,6 +397,9 @@ class numpy_wrapper:
   # -------------------------------------------------------------------------
 
   def iarray(self, c_int_type, raw_ptr, nelem, dim=1):
+    if raw_ptr is None:
+      return None
+
     import numpy as np
     np_int_type = self._ctype_to_numpy_int(c_int_type)
 
@@ -405,7 +419,11 @@ class numpy_wrapper:
   # -------------------------------------------------------------------------
 
   def darray(self, raw_ptr, nelem, dim=1):
+    if raw_ptr is None:
+      return None
+
     import numpy as np
+
     if dim == 1:
       ptr = cast(raw_ptr, POINTER(c_double * nelem))
     else:

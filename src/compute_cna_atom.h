@@ -27,71 +27,22 @@ namespace LAMMPS_NS {
 class ComputeCNAAtom : public Compute {
  public:
   ComputeCNAAtom(class LAMMPS *, int, char **);
-  ~ComputeCNAAtom();
-  void init();
-  void init_list(int, class NeighList *);
-  void compute_peratom();
-  double memory_usage();
-  int patternflag;
-  int sigflag;
+  ~ComputeCNAAtom() override;
+  void init() override;
+  void init_list(int, class NeighList *) override;
+  void compute_peratom() override;
+  double memory_usage() override;
 
  private:
   int nmax;
-  int nnn;
   double cutsq;
   class NeighList *list;
   int **nearest;
-  double **distsq;
-  double *cutsq_;
-  double **cna_array;
   int *nnearest;
   double *pattern;
-  void select3(int, int, double *, int *);
-  static int compare_cna(const void *, const void *);
-  static int compare_neigh(const void *, const void *);
-  void find_neighbors(int, double **, int *, int, double,
-                      int *, double *, int *);
-  void compute_acutsq(double *, int, double *, int *);
 };
 
 }    // namespace LAMMPS_NS
 
 #endif
 #endif
-
-/* ERROR/WARNING messages:
-
-E: Illegal ... command
-
-Self-explanatory.  Check the input script syntax and compare to the
-documentation for the command.  You can use -echo screen as a
-command-line option when running LAMMPS to see the offending line.
-
-E: Compute cna/atom requires a pair style be defined
-
-Self-explanatory.
-
-E: Compute cna/atom cutoff is longer than pairwise cutoff
-
-Self-explanatory.
-
-W: Compute cna/atom cutoff may be too large to find ghost atom neighbors
-
-The neighbor cutoff used may not encompass enough ghost atoms
-to perform this operation correctly.
-
-W: More than one compute cna/atom defined
-
-It is not efficient to use compute cna/atom  more than once.
-
-W: Too many neighbors in CNA for %d atoms
-
-More than the maximum # of neighbors was found multiple times.  This
-was unexpected.
-
-W: Too many common neighbors in CNA %d times
-
-More than the maximum # of neighbors was found multiple times.  This
-was unexpected.
-
-*/

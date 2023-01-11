@@ -27,11 +27,10 @@ join the `LAMMPS developers on Slack <https://lammps.slack.com>`_.  This
 slack work space is by invitation only.  Thus for access, please send an
 e-mail to ``slack@lammps.org`` explaining what part of LAMMPS you are
 working on.  Only discussions related to LAMMPS development are
-tolerated in that work space, so this is **NOT** for people that look for
-help with compiling, installing, or using LAMMPS.  Please post a message
-to the `lammps-users mailing list <https://www.lammps.org/mail.html>`_
-or the `LAMMPS forum <https://www.lammps.org/forum.html>`_ for those
-purposes.
+tolerated in that work space, so this is **NOT** for people that look
+for help with compiling, installing, or using LAMMPS.  Please post a
+message to the `LAMMPS forum <https://www.lammps.org/forum.html>`_ for
+those purposes.
 
 Packages versus individual files
 --------------------------------
@@ -115,8 +114,8 @@ External contributions
 
 If you prefer to do so, you can also develop and support your add-on
 feature **without** having it included in the LAMMPS distribution, for
-example as a download from a website of your own.  See the `Offsite
-LAMMPS packages and tools <https://www.lammps.org/offsite.html>`_ page
+example as a download from a website of your own.  See the `External
+LAMMPS packages and tools <https://www.lammps.org/external.html>`_ page
 of the LAMMPS website for examples of groups that do this.  We are happy
 to advertise your package and website from that page.  Simply email the
 `developers <https://www.lammps.org/authors.html>`_ with info about your
