@@ -48,8 +48,8 @@ using namespace LAMMPS_NS;
 
 PairAsakuraOosawa::PairAsakuraOosawa(LAMMPS *lmp) : Pair(lmp)
 {
-  // nextra = 1;
-  // pvector = new double[1];
+  nextra = 1;
+  pvector = new double[1];
   writedata = 1;
 }
 
@@ -175,7 +175,7 @@ void PairAsakuraOosawa::compute(int eflag, int vflag)
     }
   }
 
-  // if (eflag_global) pvector[0] = duds;
+  if (eflag_global) pvector[0] = duds;
   if (vflag_fdotr) virial_fdotr_compute();
 }
 
