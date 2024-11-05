@@ -85,7 +85,7 @@ FixGCMC::FixGCMC(LAMMPS *lmp, int narg, char **arg) :
   global_freq = 1;
   extvector = 0;
   restart_global = 1;
-  time_depend = 1;
+  time_depend = 0;
 
   ngroups = 0;
   ngrouptypes = 0;
